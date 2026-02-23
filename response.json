@@ -1,0 +1,84 @@
+{
+    "id":  1,
+    "empId":  null,
+    "fullName":  "Niha",
+    "dept":  "cd",
+    "role":  "HR",
+    "entity":  "FIS",
+    "dateOfBirth":  "2003-12-11",
+    "dateOfInterview":  "2026-01-27",
+    "dateOfOnboarding":  "2026-02-19",
+    "email":  "niharr3111@gmail.com",
+    "phone":  "8686753533",
+    "status":  "UNDER_REVIEW",
+    "onboardingToken":  "weqhbWeYq6C940vpxSl2PeW-9TTkQSGA1kQIBAMk3JE",
+    "activatedAt":  null,
+    "bloodGroup":  "B+",
+    "permanentAddress":  "bmgl",
+    "presentAddress":  "nzb",
+    "fathersName":  "Janardhan",
+    "fathersPhone":  "9875437654",
+    "mothersName":  "radha",
+    "mothersPhone":  "8765432567",
+    "emergencyContactName":  "chandana",
+    "emergencyRelationship":  "sister",
+    "emergencyNumber":  "8985657455",
+    "bankName":  "SBI",
+    "branchName":  "BMGL",
+    "accountNumber":  "98734568765",
+    "ifscCode":  "987654345",
+    "upiId":  "98765434567",
+    "passbookPath":  null,
+    "educations":  [
+                       {
+                           "institutionName":  "SHS",
+                           "hallTicketNo":  "1909876543",
+                           "passoutYear":  2019,
+                           "percentageCgpa":  93.0,
+                           "certificatePath":  "Screenshot 2026-02-11 232241.png",
+                           "marksMemoPath":  null
+                       },
+                       {
+                           "institutionName":  "KJC",
+                           "hallTicketNo":  "2109875678",
+                           "passoutYear":  2021,
+                           "percentageCgpa":  87.0,
+                           "certificatePath":  "Screenshot (76).png",
+                           "marksMemoPath":  null
+                       },
+                       {
+                           "institutionName":  "NDC",
+                           "hallTicketNo":  "2409876543",
+                           "passoutYear":  2024,
+                           "percentageCgpa":  88.0,
+                           "certificatePath":  "Screenshot 2026-02-11 232211.png",
+                           "marksMemoPath":  "Screenshot 2026-02-11 232241.png"
+                       }
+                   ],
+    "certifications":  [
+
+                       ],
+    "internships":  [
+
+                    ],
+    "workExperiences":  [
+
+                        ],
+    "identityProofs":  [
+                           {
+                               "proofType":  "PAN",
+                               "documentNumber":  "98765432",
+                               "filePath":  "Screenshot (76).png"
+                           },
+                           {
+                               "proofType":  "AADHAR",
+                               "documentNumber":  "987654323486",
+                               "filePath":  "Screenshot 2026-02-11 232241.png"
+                           },
+                           {
+                               "proofType":  "PHOTO",
+                               "documentNumber":  null,
+                               "filePath":  "Screenshot 2026-02-11 232211.png"
+                           }
+                       ]
+}

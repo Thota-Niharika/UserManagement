@@ -1,0 +1,337 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  UserSquare2,
+  Truck,
+  Package,
+  Calendar,
+  ArrowUpRight,
+  ArrowDownRight,
+  UserPlus
+} from 'lucide-react';
+import apiService from '../../services/api';
+
+const Dashboard = () => {
+  const navigate = useNavigate();
+  const [employees, setEmployees] = useState([]);
+  const [recentEmployees, setRecentEmployees] = useState([]);
+  const [counts, setCounts] = useState({
+    employees: 0,
+    vendors: 0,
+    assets: 0
+  });
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        const [empData, vendorData, assetData] = await Promise.all([
+          apiService.getEmployees(),
+          apiService.getVendors(),
+          apiService.getAssets()
+        ]);
+
+        const empList = Array.isArray(empData) ? empData : (empData?.data || []);
+        const vendorList = Array.isArray(vendorData) ? vendorData : (vendorData?.data || []);
+        const assetList = Array.isArray(assetData) ? assetData : (assetData?.data || []);
+
+        setEmployees(empList);
+        setCounts({
+          employees: empList.length,
+          vendors: vendorList.length,
+          assets: assetList.length
+        });
+
+        // Get last 5 employees (assuming they are returned in chronological order or have IDs that increase)
+        // Or if the backend returns them newest first, just take slice(0, 5)
+        // For now, let's assume they are order of addition and reverse them.
+        setRecentEmployees([...empList].reverse().slice(0, 5));
+
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
+
+  const kpis = [
+    { title: 'Total Employees', value: counts.employees.toString(), icon: <UserSquare2 />, color: 'var(--success)', trend: 'Live', up: true },
+    { title: 'Active Vendors', value: counts.vendors.toString(), icon: <Truck />, color: 'var(--info)', trend: 'Live', up: true },
+    { title: 'Total Assets', value: counts.assets.toString(), icon: <Package />, color: 'var(--warning)', trend: 'Live', up: true },
+  ];
+
+  return (
+    <div className="dashboard-page animate-fade-in">
+      <header className="page-header">
+        <h1>Dashboard Overview</h1>
+        <p>Operational summary and recent system activities.</p>
+      </header>
+
+      <div className="kpi-grid">
+        {kpis.map((kpi, i) => (
+          <div key={i} className="card kpi-card">
+            <div className="kpi-icon" style={{ backgroundColor: `${kpi.color}15`, color: kpi.color }}>
+              {kpi.icon}
+            </div>
+            <div className="kpi-info">
+              <span className="kpi-title">{kpi.title}</span>
+              <div className="kpi-value-row">
+                <span className="kpi-value">{kpi.value}</span>
+                <span className={`kpi-trend ${kpi.up ? 'up' : 'down'}`}>
+                  {kpi.up ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                  {kpi.trend}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="dashboard-content-grid">
+        <div className="card recent-activity">
+          <div className="card-header">
+            <h3>Recently Added Employees</h3>
+            <button className="text-btn" onClick={() => navigate('/employees')}>View All</button>
+          </div>
+          <div className="activity-list">
+            {recentEmployees.length > 0 ? (
+              recentEmployees.map((emp) => (
+                <div key={emp.id} className="activity-item">
+                  <div className="activity-icon-wrapper">
+                    <UserPlus size={16} color="var(--success)" />
+                  </div>
+                  <div className="activity-details">
+                    <p className="activity-text">
+                      <strong>{emp.fullName || emp.name}</strong> was onboarded as <span>{emp.roleName || emp.role}</span>
+                    </p>
+                    <div className="activity-meta">
+                      <span className="activity-time">
+                        <Calendar size={12} /> {emp.dateOfOnboarding || emp.onboardingDate || 'N/A'}
+                      </span>
+                      <span className="activity-dept">{emp.deptName || emp.department || ''}</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="empty-state">
+                <p>No recent employees found.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        .dashboard-page {
+          animation: fadeIn 0.6s ease-out;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .page-header {
+          margin-bottom: 2rem;
+        }
+
+        .page-header h1 {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: var(--text-main);
+        }
+
+        .page-header p {
+          color: var(--text-muted);
+          font-size: 0.875rem;
+        }
+
+        .kpi-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 1.25rem;
+          margin-bottom: 2rem;
+        }
+
+        .kpi-card {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+        }
+
+        .kpi-icon {
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .kpi-info {
+          flex: 1;
+        }
+
+        .kpi-title {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.025em;
+        }
+
+        .kpi-value-row {
+          display: flex;
+          align-items: baseline;
+          gap: 0.75rem;
+        }
+
+        .kpi-value {
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: var(--text-main);
+        }
+
+        .kpi-trend {
+          font-size: 0.75rem;
+          font-weight: 600;
+          display: flex;
+          align-items: center;
+        }
+
+        .kpi-trend.up { color: var(--success); }
+        .kpi-trend.down { color: var(--danger); }
+
+        .dashboard-content-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 1.25rem;
+        }
+
+        .card-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1.5rem;
+        }
+
+        .card-header h3 {
+          font-size: 1rem;
+          font-weight: 600;
+        }
+
+        .text-btn {
+          background: none;
+          color: var(--primary);
+          font-size: 0.875rem;
+          font-weight: 600;
+        }
+
+        .activity-item {
+          display: flex;
+          gap: 1rem;
+          padding: 1rem 0;
+          border-bottom: 1px solid var(--divider);
+        }
+
+        .activity-item:last-child {
+          border-bottom: none;
+        }
+
+        .status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          margin-top: 6px;
+        }
+
+        .status-dot.success { background: var(--success); }
+        .status-dot.danger { background: var(--danger); }
+        .status-dot.info { background: var(--info); }
+        .status-dot.warning { background: var(--warning); }
+
+        .activity-icon-wrapper {
+          width: 36px;
+          height: 36px;
+          background: rgba(34, 197, 94, 0.1);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .activity-meta {
+          display: flex;
+          align-items: center;
+          gap: 1.5rem;
+          margin-top: 0.25rem;
+        }
+
+        .activity-time {
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
+          font-size: 0.75rem;
+          color: var(--text-muted);
+        }
+
+        .activity-dept {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--primary);
+          background: rgba(37, 99, 235, 0.05);
+          padding: 0.125rem 0.5rem;
+          border-radius: 4px;
+        }
+
+        .empty-state {
+          padding: 2rem;
+          text-align: center;
+          color: var(--text-muted);
+        }
+
+        .activity-text {
+          font-size: 0.875rem;
+          color: var(--text-main);
+        }
+
+        .activity-text span {
+          color: var(--text-muted);
+        }
+
+        .activity-time {
+          font-size: 0.75rem;
+          color: var(--text-muted);
+        }
+
+        .health-stats {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+
+        .health-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 0.875rem;
+        }
+
+        .text-secondary {
+          color: var(--text-muted);
+          font-weight: 500;
+        }
+
+        @media (max-width: 1024px) {
+          .dashboard-content-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default Dashboard;

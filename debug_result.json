@@ -1,0 +1,36 @@
+{
+  "intermediate": {
+    "institutionName": "KJC",
+    "hallTicketNo": "2109875678",
+    "passoutYear": 2021,
+    "percentageCgpa": 87,
+    "certificatePath": "Screenshot (76).png",
+    "marksMemoPath": null
+  },
+  "sortedEducations": [
+    {
+      "institutionName": "SHS",
+      "hallTicketNo": "1909876543",
+      "passoutYear": 2019,
+      "percentageCgpa": 93,
+      "certificatePath": "Screenshot 2026-02-11 232241.png",
+      "marksMemoPath": null
+    },
+    {
+      "institutionName": "KJC",
+      "hallTicketNo": "2109875678",
+      "passoutYear": 2021,
+      "percentageCgpa": 87,
+      "certificatePath": "Screenshot (76).png",
+      "marksMemoPath": null
+    },
+    {
+      "institutionName": "NDC",
+      "hallTicketNo": "2409876543",
+      "passoutYear": 2424,
+      "percentageCgpa": 88,
+      "certificatePath": "Screenshot 2026-02-11 232211.png",
+      "marksMemoPath": "Screenshot 2026-02-11 232241.png"
+    }
+  ]
+}
