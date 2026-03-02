@@ -1,22 +1,9 @@
-import React from 'react';
 import { X, Package, Tag, ArrowRightLeft, MessageSquare, Image as ImageIcon, User, Building2, FileText } from 'lucide-react';
+import { getFileUrl } from '../../../utils/normalizeEmployee';
 
 const ViewAssetModal = ({ isOpen, onClose, asset }) => {
     if (!isOpen || !asset) return null;
 
-    const getFileUrl = (path) => {
-        if (!path) return '';
-        const sPath = path.toString();
-        if (sPath.startsWith('http')) return sPath;
-        if (sPath.startsWith('data:')) return sPath;
-        if (sPath.startsWith('/api/files/')) return sPath;
-
-        // Clean path (backslashes to forward slashes)
-        const cleanPath = sPath.replace(/\\/g, '/');
-        if (cleanPath.startsWith('/')) return cleanPath;
-
-        return `/api/files/${cleanPath}`;
-    };
 
     return (
         <div className="modal-overlay" onClick={onClose}>
@@ -184,12 +171,10 @@ const ViewAssetModal = ({ isOpen, onClose, asset }) => {
                         <div className="photos-container">
                             {asset.photos && asset.photos.length > 0 ? (
                                 asset.photos.map((photo, index) => {
-                                    const lowerPath = (photo || "").toLowerCase();
-                                    const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(lowerPath);
-                                    const isPdf = lowerPath.endsWith(".pdf");
                                     const fileUrl = getFileUrl(photo);
-
-                                    console.log(`[ViewAssetModal] Photo Path: ${photo}, Generated URL: ${fileUrl}`);
+                                    const lowerUrl = fileUrl.toLowerCase();
+                                    const isImage = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(lowerUrl);
+                                    const isPdf = lowerUrl.endsWith(".pdf");
 
                                     return (
                                         <div key={index} className="photo-wrapper" onClick={() => window.open(fileUrl, '_blank')} style={{ cursor: 'pointer' }}>
@@ -198,8 +183,23 @@ const ViewAssetModal = ({ isOpen, onClose, asset }) => {
                                                     src={fileUrl}
                                                     alt={`Asset ${index + 1}`}
                                                     onError={(e) => {
-                                                        console.error(`[ViewAssetModal] Failed to load image: ${fileUrl}`);
-                                                        e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
+                                                        const target = e.target;
+                                                        if (target.dataset.errorHandled) return;
+                                                        target.dataset.errorHandled = 'true';
+
+                                                        const currentSrc = target.src;
+                                                        const match = currentSrc.match(/\/api\/(?:onboarding\/)?files\/(.+)$/);
+                                                        const relativePath = match ? match[1] : '';
+
+                                                        if (currentSrc.includes('/api/files/')) {
+                                                            target.src = `/api/onboarding/files/${relativePath}`;
+                                                        } else if (currentSrc.includes('/api/onboarding/files/')) {
+                                                            target.src = `/api/files/${relativePath}`;
+                                                            target.dataset.errorHandled = 'final';
+                                                        } else {
+                                                            target.src = '/placeholder.png';
+                                                            target.classList.add('broken-link');
+                                                        }
                                                     }}
                                                 />
                                             ) : isPdf ? (

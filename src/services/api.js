@@ -289,6 +289,10 @@ class ApiService {
         return this.post(endpoint, data);
     }
 
+    getOnboardingByToken(token) {
+        return this.get(`/onboarding/detail?token=${encodeURIComponent(token)}`);
+    }
+
     reviewOnboarding(data, token) {
         const endpoint = token ? `/onboarding/review?token=${encodeURIComponent(token)}` : '/onboarding/review';
         return this.post(endpoint, data);
@@ -324,8 +328,12 @@ class ApiService {
         return this.get(`/onboarding/${id}`);
     }
 
-    rejectOnboardingDocument(employeeId, fieldKey, label) {
-        return this.post('/onboarding/reject-document', { employeeId, fieldKey, documentLabel: label });
+    rejectOnboardingDocument(employeeId, entityType, entityId) {
+        return this.post('/onboarding/reject-document', {
+            employeeId,
+            entityType,
+            entityId
+        });
     }
 
     // ---------- VENDORS ----------

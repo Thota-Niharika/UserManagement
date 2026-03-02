@@ -23,6 +23,7 @@ import EditEmployeeModal from './EditEmployeeModal';
 import ViewEmployeeModal from './ViewEmployeeModal';
 import apiService from '../../../services/api';
 import Toast from '../../common/Toast';
+import { normalizeEmployee, getFileUrl } from '../../../utils/normalizeEmployee';
 
 const EmployeeList = () => {
   const [employees, setEmployees] = useState([]);
@@ -30,7 +31,7 @@ const EmployeeList = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+
 
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -121,358 +122,18 @@ const EmployeeList = () => {
     return { date: '-', time: '-' };
   };
 
-  const normalizeEmployee = (emp, freshDepts = null, freshRoles = null, freshEntities = null) => {
-    if (!emp) return null;
 
-    // Use passed lists or fall back to component state
-    const dList = freshDepts || departments;
-    const rList = freshRoles || roles;
-    const eList = freshEntities || entities;
+  // --- COMPONENT SPECIFIC UI EXTENSIONS ---
+  const decorateEmployee = (normalized, raw) => {
+    if (!normalized) return null;
 
-    // --- DEBUG LOGGING (Temporary) ---
-    if (emp.name || emp.fullName) {
-      console.log(`[DEBUG] Normalizing Employee: ${emp.name || emp.fullName}`, emp);
-    }
-
-    // --- PRE-PARSING ---
-    // Try to parse ANY string that looks like JSON to expand the search space
-    let expandedEmp = { ...emp };
-    Object.keys(emp).forEach(key => {
-      const val = emp[key];
-      if (typeof val === 'string' && val.length > 2 && (val.trim().startsWith('{') || val.trim().startsWith('['))) {
-        try {
-          const parsed = JSON.parse(val);
-          if (parsed && typeof parsed === 'object') {
-            if (!Array.isArray(parsed)) {
-              expandedEmp = { ...expandedEmp, ...parsed };
-            }
-          }
-        } catch (e) { }
-      } else if (val && typeof val === 'object' && !Array.isArray(val)) {
-        // Also merge actual objects into the flat search space
-        expandedEmp = { ...expandedEmp, ...val };
-      }
-    });
-
-    const findByPattern = (obj, patterns) => {
-      if (!obj || typeof obj !== 'object') return null;
-
-      // 1. Direct search (Keys)
-      for (const key of Object.keys(obj)) {
-        if (patterns.some(p => key.toLowerCase().includes(p.toLowerCase()))) {
-          let val = obj[key];
-          if (typeof val === 'string' && (val.trim().startsWith('{') || val.trim().startsWith('['))) {
-            try { val = JSON.parse(val); } catch (e) { }
-          }
-          // IGNORE falsy values, empty strings, and dashes to allow deeper search
-          if (val !== null && val !== undefined && val !== '-' && val !== '') {
-            if (typeof val === 'string' && val.trim() === '') return null; // Continue search
-            return val;
-          }
-        }
-      }
-
-      // 2. Recursive search
-      for (const key of Object.keys(obj)) {
-        const val = obj[key];
-        if (val && typeof val === 'object') {
-          if (Array.isArray(val)) {
-            // Recurse into arrays
-            for (const item of val) {
-              const found = findByPattern(item, patterns);
-              if (found) return found;
-            }
-          } else {
-            const found = findByPattern(val, patterns);
-            if (found) return found;
-          }
-        }
-      }
-      return null;
-    };
-
-    // Helper: Specifically find a proof object by type name in any array/object
-    const findProof = (obj, typeName) => {
-      if (!obj || typeof obj !== 'object') return null;
-
-      // If it's an array (likely identityProofs)
-      if (Array.isArray(obj)) {
-        return obj.find(p => p.proofType === typeName || p.type === typeName) || null;
-      }
-
-      // If it's the root object, look for a field that is the array
-      const proofs = obj.identityProofs || findByPattern(obj, ['identityProofs', 'proofs', 'identities']);
-      if (Array.isArray(proofs)) {
-        const found = proofs.find(p => p.proofType === typeName || p.type === typeName);
-        if (found) return found;
-      }
-
-      // Fallback: search for a key that contains the type name and looks like a proof
-      return findByPattern(obj, [typeName + 'Proof', typeName + '_proof', typeName]);
-    };
-
-    // Helper: Specifically scavenge for a string path
-    const scavengePath = (obj, patterns) => {
-      const val = findByPattern(obj, patterns);
-      if (typeof val === 'string') return val;
-      if (val && typeof val === 'object') {
-        // If it's an object, look for commonly used path keys inside it
-        return val.filePath || val.path || val.certificatePath || val.panPath || val.aadharPath || val.photoPath || val.url || findByPattern(val, ['path', 'url', 'file']);
-      }
-      return null;
-    };
-
-    // Helper: Robustly normalize an education/internship object
-    const normalizeEdu = (item) => {
-      if (!item || item === '-') return null;
-      let parsed = item;
-      if (typeof item === 'string' && (item.trim().startsWith('{') || item.trim().startsWith('['))) {
-        try { parsed = JSON.parse(item); } catch (e) { }
-      }
-      if (!parsed || typeof parsed !== 'object' || parsed === '-') return null;
-
-      // Extract raw values using patterns
-      const rawInst = parsed.institutionName || parsed.school || parsed.college || parsed.instituteName || parsed.institute || findByPattern(parsed, ['institute', 'school', 'college', 'university', 'board', 'institution', 'collage', 'acadamy']);
-      const rawYear = parsed.passoutYear || parsed.year || parsed.yop || parsed.completionYear || findByPattern(parsed, ['year', 'passout', 'date', 'passing', 'completion', 'duration']);
-      const rawScore = parsed.percentageCgpa || parsed.percentage || parsed.cgpa || parsed.grade || parsed.score || parsed.marks || findByPattern(parsed, ['percentage', 'cgpa', 'marks', 'score', 'grade']);
-
-      // Ensure we have an object to work with
-      const result = {
-        ...parsed,
-        institutionName: rawInst || '-',
-        passoutYear: rawYear || '-',
-        percentageCgpa: rawScore || '-',
-        certificatePath: parsed.certificatePath || scavengePath(parsed, ['certificate', 'certPath', 'doc', 'file', 'image']),
-        marksMemoPath: parsed.marksMemoPath || scavengePath(parsed, ['marksMemo', 'marks', 'memo', 'transcript'])
-      };
-
-      // Final check: if all major fields are "-", it's essentially empty
-      if (result.institutionName === '-' && result.passoutYear === '-' && result.percentageCgpa === '-') return null;
-      return result;
-    };
-
-    // 1. Department Mapping
-    let dept = emp.deptName || emp.departmentName || findByPattern(emp, ['deptName', 'department', 'dept', 'dept_name']) || '-';
-    let deptDisplay = (typeof dept === 'string' && dept !== '-') ? dept : (dept?.name || dept?.deptName || '-');
-
-    // If we have a code or ID, look up in master list
-    if (deptDisplay === '-' || (typeof dept === 'string' && dept.length < 5)) {
-      const found = dList.find(d => getDeptCode(d) === dept || getDeptName(d) === dept);
-      if (found) deptDisplay = getDeptName(found);
-    }
-
-    // 2. Role Mapping
-    let role = emp.roleName || emp.designation || findByPattern(emp, ['roleName', 'designation', 'role', 'role_name']) || '-';
-    let roleDisplay = (typeof role === 'string' && role !== '-') ? role : (role?.name || role?.roleName || role?.designation || '-');
-
-    if (roleDisplay === '-' || (typeof role === 'string' && role.length < 5)) {
-      const found = rList.find(r => getRoleCode(r) === role || getRoleName(r) === role);
-      if (found) roleDisplay = getRoleName(found);
-    }
-
-    // 3. Entity Mapping
-    let entity = emp.entityName || findByPattern(emp, ['entityName', 'entity', 'entity_name']) || '-';
-    let entityDisplay = (typeof entity === 'string' && entity !== '-') ? entity : (entity?.name || entity?.entityName || '-');
-
-    if (entityDisplay === '-' || (typeof entity === 'string' && entity.length < 5)) {
-      const found = eList.find(e => getEntityCode(e) === entity || getEntityName(e) === entity);
-      if (found) entityDisplay = getEntityName(found);
-    }
-
-    // 4. Date Scanning
-    let rawOnboarding = expandedEmp.dateOfOnboarding || expandedEmp.onboardingDate || expandedEmp.onboarding_date || expandedEmp.dateOfOnboard || expandedEmp.onboard_date;
-    if (!rawOnboarding) {
-      rawOnboarding = findByPattern(expandedEmp, ['onboard']);
-    }
-
-    let rawInterview = expandedEmp.dateOfInterview || expandedEmp.interviewDate || expandedEmp.interview_date;
-    if (!rawInterview) {
-      rawInterview = findByPattern(expandedEmp, ['interview']);
-    }
-
-    let rawDob = expandedEmp.dateOfBirth || expandedEmp.dob || expandedEmp.date_of_birth;
-    if (!rawDob) {
-      rawDob = findByPattern(expandedEmp, ['dob', 'birth']);
-    }
-
-    // Sort educations by year (ascending) to correctly map SSC -> Inter -> Grad
-    const sortedEducations = (expandedEmp.educations || []).sort((a, b) => {
-      const yearA = parseInt(a.passoutYear || a.year || 0) || 0;
-      const yearB = parseInt(b.passoutYear || b.year || 0) || 0;
-      return yearA - yearB;
-    });
-
-    const normalized = {
-      ...expandedEmp,
-      name: expandedEmp.fullName || expandedEmp.name || findByPattern(expandedEmp, ['name']) || '',
-      phone: expandedEmp.phoneNumber || expandedEmp.phone || expandedEmp.mobileNumber || '',
-      employeeId: expandedEmp.id || expandedEmp.employeeId || expandedEmp.empCode || '',
-      onboardingDate: formatDate(rawOnboarding),
-      dateOfInterview: formatDate(rawInterview),
-      dateOfBirth: formatDate(rawDob),
-      dob: formatDate(rawDob),
-      deptName: deptDisplay || dept || '-',
-      roleName: roleDisplay || role || '-',
-      entityName: entityDisplay || entity || '-',
-      createdAt: formatDateTime(expandedEmp.createdAt || expandedEmp.createdDate || expandedEmp.created_at || expandedEmp.creationDate || expandedEmp.dateCreated || findByPattern(expandedEmp, ['createdAt', 'createdDate', 'created_at', 'creationDate', 'dateCreated'])),
-      // --- AGGRESSIVE DATA SCAVENGING ---
-      fullName: expandedEmp.fullName || expandedEmp.name || findByPattern(expandedEmp, ['fullName', 'name']),
-      phoneNumber: expandedEmp.phoneNumber || expandedEmp.phone || expandedEmp.mobileNumber,
-      bloodGroup: expandedEmp.bloodGroup || findByPattern(expandedEmp, ['bloodGroup', 'blood']) || '-',
-      presentAddress: expandedEmp.presentAddress || findByPattern(expandedEmp, ['presentAddress', 'presAddress', 'presAddr']) || '',
-      permanentAddress: expandedEmp.permanentAddress || findByPattern(expandedEmp, ['permanentAddress', 'permAddress', 'permAddr']) || '',
-      fathersName: expandedEmp.fathersName || findByPattern(expandedEmp, ['fatherName', 'fathersName', 'father']) || '',
-      fathersPhone: expandedEmp.fathersPhone || findByPattern(expandedEmp, ['fatherPhone', 'fathers_phone', 'father_phone']) || '',
-      mothersName: expandedEmp.mothersName || findByPattern(expandedEmp, ['motherName', 'mothersName', 'mother']) || '',
-      mothersPhone: expandedEmp.mothersPhone || findByPattern(expandedEmp, ['motherPhone', 'mothers_phone', 'mother_phone']) || '',
-      emergencyContactName: expandedEmp.emergencyContactName || findByPattern(expandedEmp, ['emergencyContactName', 'emergencyName', 'emergencyContact']) || '',
-      emergencyNumber: expandedEmp.emergencyNumber || findByPattern(expandedEmp, ['emergencyNumber', 'emergencyPhone', 'emergencyMobile']) || '',
-      emergencyRelationship: expandedEmp.emergencyRelationship || findByPattern(expandedEmp, ['emergencyRelationship', 'emergencyRel']) || '',
-      bankName: expandedEmp.bankName || findByPattern(expandedEmp, ['bankName', 'bank']) || '',
-      branchName: expandedEmp.branchName || findByPattern(expandedEmp, ['branchName', 'branch']) || '',
-      accountNumber: expandedEmp.accountNumber || findByPattern(expandedEmp, ['accountNumber', 'accNum', 'account']) || '',
-      ifscCode: expandedEmp.ifscCode || findByPattern(expandedEmp, ['ifscCode', 'ifsc']) || '',
-      upiId: expandedEmp.upiId || findByPattern(expandedEmp, ['upiId', 'upi']) || '',
-
-      ssc: normalizeEdu(expandedEmp.ssc || findByPattern(expandedEmp, ['ssc', 'matriculation', '10th_standard']) || (sortedEducations?.[0])),
-      intermediate: normalizeEdu(expandedEmp.intermediate || findByPattern(expandedEmp, ['intermediate', 'hsc', '12th', 'plus_two']) || (sortedEducations?.[1])),
-      graduation: normalizeEdu(expandedEmp.graduation || findByPattern(expandedEmp, ['graduation', 'degree', 'bachelors', 'undergrad']) || (sortedEducations?.[2])),
-      postGraduations: (function () {
-        const pgRaw = expandedEmp.postGraduations || findByPattern(expandedEmp, ['postGrad', 'masters', 'pg']);
-        if (pgRaw) return (Array.isArray(pgRaw) ? pgRaw : [pgRaw]).map(normalizeEdu).filter(Boolean);
-        // Fallback: if we used indices 0,1,2 for ssc/inter/grad, any remaining in 'educations' are PG or other
-        if (sortedEducations && sortedEducations.length > 3) {
-          return sortedEducations.slice(3).map(normalizeEdu).filter(Boolean);
-        }
-        return [];
-      })(),
-      otherCertificates: (function () {
-        // ... (existing)
-        const otherRaw = expandedEmp.otherCertificates || findByPattern(expandedEmp, ['otherCertificates', 'otherCerts', 'certifications']);
-        return (Array.isArray(otherRaw) ? otherRaw : (otherRaw ? [otherRaw] : [])).map(cert => ({
-          ...cert,
-          certificatePath: cert.certificatePath || scavengePath(cert, ['certificate', 'path', 'file'])
-        })).filter(Boolean);
-      })(),
-      internships: (expandedEmp.internships || findByPattern(expandedEmp, ['internships', 'intern']) || []).map(int => ({
-        ...int,
-        offerLetterPath: int.offerLetterPath || scavengePath(int, ['offer']),
-        experienceCertificatePath: int.experienceCertificatePath || scavengePath(int, ['cert', 'relieving', 'exp'])
-      })),
-      workExperiences: (expandedEmp.workExperiences || findByPattern(expandedEmp, ['workExperiences', 'workHistory', 'jobHistory', 'experience']) || []).map(work => ({
-        ...work,
-        offerLetterPath: work.offerLetterPath || scavengePath(work, ['offer']),
-        relievingLetterPath: work.relievingLetterPath || scavengePath(work, ['relieving']),
-        payslipsPath: work.payslipsPath || scavengePath(work, ['payslip', 'payslips']),
-        experienceCertificatePath: work.experienceCertificatePath || scavengePath(work, ['cert', 'exp'])
-      })),
-
-      // Explicit Document Proofs (for Document Viewer)
-      panProof: (function () {
-        const p = findProof(expandedEmp, 'PAN');
-        if (!p) return null;
-        return { ...p, panPath: p.panPath || p.filePath || scavengePath(p, ['path']) };
-      })(),
-      aadharProof: (function () {
-        const a = findProof(expandedEmp, 'AADHAR');
-        if (!a) return null;
-        return { ...a, aadharPath: a.aadharPath || a.filePath || scavengePath(a, ['path']) };
-      })(),
-      voterProof: (function () {
-        const v = findProof(expandedEmp, 'VOTER');
-        if (!v) return null;
-        return { ...v, voterPath: v.voterPath || v.filePath || scavengePath(v, ['path']) };
-      })(),
-      passportProof: (function () {
-        const p = findProof(expandedEmp, 'PASSPORT');
-        if (!p) return null;
-        return { ...p, passportPath: p.passportPath || p.filePath || scavengePath(p, ['path']) };
-      })(),
-
-      // Explicit Document Paths (aligned with EmployeeForm.java)
-      passbookPath: expandedEmp.passbookPath ||
-        scavengePath(expandedEmp, ['passbook', 'bankPassbook', 'passbook_file', 'passbookPath']) ||
-        emp.passbookPath ||
-        emp.employeeForm?.passbookPath ||
-        emp.onboardingForm?.passbookPath ||
-        expandedEmp.onboardingForm?.passbookPath || '',
-
-      // Identity Proof paths - extracted from identityProofs list (EmployeeForm has List<IdentityProof> with proofType + filePath)
-      panPath: (function () {
-        const proof = findProof(expandedEmp, 'PAN');
-        return expandedEmp.panPath || proof?.filePath || proof?.panPath || '';
-      })(),
-      aadharPath: (function () {
-        const proof = findProof(expandedEmp, 'AADHAR');
-        return expandedEmp.aadharPath || proof?.filePath || proof?.aadharPath || '';
-      })(),
-      photoPath: (function () {
-        const proof = findProof(expandedEmp, 'PHOTO');
-        return expandedEmp.photoPath || proof?.filePath || proof?.photoPath || '';
-      })(),
-      passportPath: (function () {
-        const proof = findProof(expandedEmp, 'PASSPORT');
-        return expandedEmp.passportPath || proof?.filePath || proof?.passportPath || '';
-      })(),
-      voterPath: (function () {
-        const proof = findProof(expandedEmp, 'VOTER');
-        return expandedEmp.voterPath || proof?.filePath || proof?.voterPath || '';
-      })(),
-
-      // Smart Summary Counts
-      educationCount: (expandedEmp.ssc || findByPattern(expandedEmp, ['ssc']) ? 1 : 0) +
-        (expandedEmp.intermediate || findByPattern(expandedEmp, ['intermediate']) ? 1 : 0) +
-        (expandedEmp.graduation || findByPattern(expandedEmp, ['graduation']) ? 1 : 0) +
-        (expandedEmp.postGraduations?.length || (findByPattern(expandedEmp, ['postGrad'])?.length) || 0) ||
-        (expandedEmp.educations?.length || 0),
-      internshipCount: expandedEmp.internships?.length || (findByPattern(expandedEmp, ['internships'])?.length) || 0,
-      workExperienceCount: expandedEmp.workExperiences?.length || (findByPattern(expandedEmp, ['workExperiences'])?.length) || 0,
-      identityProofCount: expandedEmp.identityProofs?.length || (findByPattern(expandedEmp, ['identityProof'])?.length) || 0
-    };
-
-    // --- DEBUG LOGGING ---
-    if (normalized.name) {
-      console.log(`[DEBUG] Final Normalized Passbook for ${normalized.name}:`, normalized.passbookPath);
-      if (!normalized.passbookPath) {
-        console.warn(`[DEBUG] Passbook MISSING for ${normalized.name}. expandedEmp keys:`, Object.keys(expandedEmp));
-      }
-    }
-
-    // Final attempt - check nested forms (backend uses both aliases)
-    const forms = [emp.employeeForm, emp.onboardingForm, expandedEmp.onboardingForm].filter(Boolean);
-    forms.forEach(f => {
-      if (normalized.onboardingDate === '-') {
-        const d = f.dateOfOnboarding || f.onboardingDate;
-        if (d) normalized.onboardingDate = formatDate(d);
-      }
-      if (normalized.dob === '-') {
-        const d = f.dob || f.dateOfBirth;
-        if (d) normalized.dob = formatDate(d);
-      }
-      if (!normalized.bankName) normalized.bankName = f.bankName || '';
-      if (!normalized.accountNumber) normalized.accountNumber = f.accountNumber || '';
-      if (!normalized.passbookPath) normalized.passbookPath = f.passbookPath || f.passbook_file || '';
-
-      if (f.identityProofs && f.identityProofs.length > 0) {
-        f.identityProofs.forEach(proof => {
-          const type = (proof.proofType || '').toUpperCase();
-          const path = proof.filePath || '';
-          if (type === 'PAN' && !normalized.panPath) normalized.panPath = path;
-          if (type === 'AADHAR' && !normalized.aadharPath) normalized.aadharPath = path;
-          if (type === 'PHOTO' && !normalized.photoPath) normalized.photoPath = path;
-          if (type === 'PASSPORT' && !normalized.passportPath) normalized.passportPath = path;
-          if (type === 'VOTER' && !normalized.voterPath) normalized.voterPath = path;
-        });
-      }
-    });
-
-    // 5. Dynamic ID Logic
+    // 1. Dynamic ID Logic
     let displayId = normalized.employeeId;
-    if (emp.status?.toLowerCase() === 'active' && hasWorkingDaysPassed(normalized.onboardingDate, 10)) {
+    if (raw.status?.toLowerCase() === 'active' && hasWorkingDaysPassed(normalized.onboardingDate, 10)) {
       displayId = `EMP/${displayId}`;
     }
 
-    // Sync with Assets assignment from localStorage
+    // 2. Asset Syncing
     const assignments = JSON.parse(localStorage.getItem('asset_assignments') || '[]');
     const myAssignment = assignments.find(a => a.employeeName === normalized.name);
 
@@ -517,7 +178,7 @@ const EmployeeList = () => {
       setEntities(freshEntities);
 
       // Pass fresh master lists to normalizeEmployee to avoid state stale-ness
-      setEmployees(freshEmps.map(emp => normalizeEmployee(emp, freshDepts, freshRoles, freshEntities)));
+      setEmployees(freshEmps.map(emp => decorateEmployee(normalizeEmployee(emp, freshDepts, freshRoles, freshEntities), emp)));
 
     } catch (e) {
       console.error('Failed to fetch data:', e);
@@ -531,11 +192,14 @@ const EmployeeList = () => {
   const handleAddEmployee = async (newEmployee) => {
     try {
       const createdEmployee = await apiService.createEmployee(newEmployee);
-      setEmployees([...employees, normalizeEmployee(createdEmployee)]);
+      console.log("[DEBUG] Backend Response (createEmployee):", createdEmployee);
+      const normalized = normalizeEmployee(createdEmployee, departments, roles, entities);
+      console.log("[DEBUG] Normalized Employee (createEmployee):", normalized);
+      setEmployees([...employees, decorateEmployee(normalized, createdEmployee)]);
       setIsAddModalOpen(false);
       setToast({
         show: true,
-        message: 'Employee added successfully! An onboarding link has been sent to their email.',
+        message: `Employee added successfully! Generated Code: ${normalized.empCode || 'N/A'}. An onboarding link has been sent to their email.`,
         type: 'success'
       });
     } catch (error) {
@@ -553,7 +217,7 @@ const EmployeeList = () => {
       // Ensure we have the ID from the selected employee
       const empId = selectedEmployee.id || selectedEmployee.employeeId;
       const updated = await apiService.updateEmployee(empId, updatedEmployee);
-      setEmployees(prev => prev.map(emp => (emp.id || emp.employeeId) === empId ? normalizeEmployee(updated) : emp));
+      setEmployees(prev => prev.map(emp => (emp.id || emp.employeeId) === empId ? decorateEmployee(normalizeEmployee(updated, departments, roles, entities), updated) : emp));
       setIsEditModalOpen(false);
       setSelectedEmployee(null);
       setToast({ show: true, message: 'Employee updated successfully!', type: 'success' });
@@ -562,46 +226,37 @@ const EmployeeList = () => {
     }
   };
 
-  /* Removed Add Dept/Role/Entity handlers as they are moved to Settings */
-
-  const handleApproveOnboarding = (emp) => {
-    setSelectedEmployee(emp);
-    setIsReviewModalOpen(true);
-  };
-
-  const handleRejectOnboarding = (emp) => {
-    setSelectedEmployee(emp);
-    setIsReviewModalOpen(true);
-  };
-
-  const handleReviewSubmit = async (reviewData) => {
+  const handleDirectApprove = async (emp) => {
     try {
-      const empId = selectedEmployee.id || selectedEmployee.employeeId;
-      const response = await apiService.reviewOnboarding({
+      const empId = emp.id || emp.employeeId;
+      await apiService.reviewOnboarding({
         employeeId: empId,
-        status: reviewData.status,
-        remarks: reviewData.remarks,
-        rejectedDocuments: reviewData.rejectedDocuments || []
+        status: 'APPROVED',
+        remarks: 'Self-Approved',
+        rejectedDocuments: []
       });
 
       setToast({
         show: true,
-        message: `Onboarding ${reviewData.status.toLowerCase()} successfully!`,
+        message: 'Onboarding approved successfully!',
         type: 'success'
       });
 
-      setIsReviewModalOpen(false);
       setIsViewModalOpen(false);
-      fetchData(); // Refresh list to see updated status
+      fetchData(); // Refresh list
     } catch (error) {
-      console.error('Failed to submit review:', error);
+      console.error('Failed to approve onboarding:', error);
       setToast({
         show: true,
-        message: 'Failed to submit review: ' + error.message,
+        message: 'Failed to approve: ' + error.message,
         type: 'error'
       });
     }
   };
+
+  /* Removed Add Dept/Role/Entity handlers as they are moved to Settings */
+
+
 
   const handleDeleteEmployee = async (id) => {
     if (window.confirm('Are you sure?')) {
@@ -616,20 +271,11 @@ const EmployeeList = () => {
   };
 
   const handleViewProfile = async (emp) => {
-    // 🕵️ Speculative Detailed Fetch: Some lists are summary-only
+    // 🕵️ Fetch detailed employee data from standard Employees API
     try {
       const empId = emp.id || emp.employeeId;
       if (empId) {
-        // Try fetching COMPREHENSIVE data first (from OnboardingController which has the full DTO)
-        let fullDetails = null;
-        try {
-          fullDetails = await apiService.getOnboardingDetail(empId);
-          console.log(`[DEBUG] Fetched COMPREHENSIVE details for ${empId} from Onboarding API:`, fullDetails);
-        } catch (err) {
-          console.warn(`[DEBUG] Onboarding API fetch failed for ${empId}, falling back to Employees API:`, err);
-          fullDetails = await apiService.get(`/employees/${empId}`);
-        }
-
+        const fullDetails = await apiService.getEmployeeDetail(empId);
         if (fullDetails) {
           const normalizedDetail = normalizeEmployee(fullDetails);
           setSelectedEmployee(normalizedDetail);
@@ -638,7 +284,7 @@ const EmployeeList = () => {
         }
       }
     } catch (e) {
-      console.warn("Detailed employee fetch failed (Standard for list-only backends):", e);
+      console.warn("Detailed employee fetch failed, falling back to list data:", e);
     }
 
     // Fallback: Use list data if detail fetch fails
@@ -651,11 +297,25 @@ const EmployeeList = () => {
     setIsEditModalOpen(true);
   };
 
-  const handleRejectDocument = async (emp, fieldKey, label) => {
+  const handleRejectDocument = async (doc, label) => {
+    const emp = selectedEmployee;
+    if (!emp) return;
+
     if (window.confirm(`Are you sure you want to reject the "${label}" for ${emp.name}? This will trigger a re-onboarding email where this field will be empty.`)) {
       try {
         const empId = emp.id || emp.employeeId;
-        await apiService.rejectOnboardingDocument(empId, fieldKey, label);
+
+        const entityId = (doc.id && !isNaN(doc.id)) ? Number(doc.id) : null;
+
+        console.log("Reject Payload Detail:", {
+          employeeId: empId,
+          entityType: doc.entityType,
+          entityId: entityId,
+          fullDoc: doc
+        });
+
+        await apiService.rejectOnboardingDocument(empId, doc.entityType, entityId);
+
         setToast({ show: true, message: `Document "${label}" rejected successfully. A re-onboarding email has been sent to ${emp.name}.`, type: 'success' });
         fetchData(); // Refresh list to see potentially empty fields or updated status
         setIsViewModalOpen(false); // Close view to refresh state when reopened
@@ -670,7 +330,8 @@ const EmployeeList = () => {
     if (!emp) return false;
     const matchesSearch =
       (emp.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(emp.employeeId || emp.empCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(emp.employeeId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(emp.empCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (emp.roleName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (emp.deptName || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesDept = activeFilters.department === 'All' || emp.deptName === activeFilters.department;
@@ -709,14 +370,7 @@ const EmployeeList = () => {
         isOpen={isViewModalOpen}
         onClose={() => setIsViewModalOpen(false)}
         employee={selectedEmployee}
-        onApprove={(emp) => {
-          handleApproveOnboarding(emp);
-          setIsViewModalOpen(false);
-        }}
-        onReject={(emp) => {
-          handleRejectOnboarding(emp);
-          setIsViewModalOpen(false);
-        }}
+        onApprove={handleDirectApprove}
         onRejectDocument={handleRejectDocument}
       />
 
@@ -748,14 +402,7 @@ const EmployeeList = () => {
         onClose={() => setToast({ ...toast, show: false })}
       />
 
-      {isReviewModalOpen && selectedEmployee && (
-        <ReviewModal
-          isOpen={isReviewModalOpen}
-          onClose={() => setIsReviewModalOpen(false)}
-          onSubmit={handleReviewSubmit}
-          employee={selectedEmployee}
-        />
-      )}
+
 
       <div className="table-container card">
         <div className="table-controls">
@@ -878,7 +525,8 @@ const EmployeeList = () => {
           <table className="employee-table">
             <thead>
               <tr>
-                <th>Employee Code</th>
+                <th>Emp ID</th>
+                <th>Emp Code</th>
                 <th>Name</th>
                 <th>Role</th>
                 <th>Department</th>
@@ -893,9 +541,43 @@ const EmployeeList = () => {
             <tbody>
               {filteredEmployees.map((emp) => (
                 <tr key={emp.id || emp.employeeId}>
-                  <td className="emp-id-cell">{emp.displayId || emp.employeeId || emp.empCode || '-'}</td>
+                  <td className="emp-id-cell">{emp.employeeId || emp.id || '-'}</td>
+                  <td className="emp-code-cell">{emp.empCode || '-'}</td>
                   <td className="emp-name-cell">
                     <div className="name-wrapper">
+                      <div className="emp-thumbnail">
+                        {emp.photoPath ? (
+                          <img
+                            src={getFileUrl(emp.photoPath)}
+                            alt={emp.name}
+                            onError={(e) => {
+                              const currentSrc = e.target.src;
+                              if (e.target.dataset.fallbackExhausted) {
+                                e.target.style.display = 'none';
+                                e.target.parentElement.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
+                                return;
+                              }
+
+                              // Extract relative path
+                              const match = currentSrc.match(/\/api\/(?:onboarding\/)?files\/(.+)$/);
+                              const relativePath = match ? match[1] : '';
+
+                              if (currentSrc.includes('/api/files/')) {
+                                e.target.src = `/api/onboarding/files/${relativePath}`;
+                              } else if (currentSrc.includes('/api/onboarding/files/')) {
+                                e.target.src = `/api/files/${relativePath}`;
+                                e.target.dataset.fallbackExhausted = 'true';
+                              } else {
+                                e.target.dataset.fallbackExhausted = 'true';
+                                e.target.style.display = 'none';
+                                e.target.parentElement.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
+                              }
+                            }}
+                          />
+                        ) : (
+                          (emp.name || '').split(' ').map(n => n[0]).join('')
+                        )}
+                      </div>
                       <span>{emp.name}</span>
                     </div>
                   </td>
@@ -1246,10 +928,32 @@ const EmployeeList = () => {
           color: var(--primary);
         }
 
-        .name-wrapper {
+        .emp-name-cell .name-wrapper {
           display: flex;
           align-items: center;
           gap: 0.75rem;
+        }
+
+        .emp-thumbnail {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: #f1f5f9;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.7rem;
+          font-weight: 700;
+          color: var(--primary);
+          overflow: hidden;
+          border: 1px solid var(--divider);
+          flex-shrink: 0;
+        }
+
+        .emp-thumbnail img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
         }
 
         .mini-avatar {
@@ -1366,123 +1070,6 @@ const EmployeeList = () => {
   );
 };
 
-const ReviewModal = ({ isOpen, onClose, employee, onSubmit }) => {
-  const [status, setStatus] = useState('APPROVED');
-  const [remarks, setRemarks] = useState('');
-  const [rejectedDocs, setRejectedDocs] = useState([]);
 
-  if (!isOpen) return null;
-
-  const docOptions = [
-    { key: 'passbook', label: 'Bank Passbook' },
-    { key: 'ssc', label: 'SSC Certificate' },
-    { key: 'inter', label: 'Inter Certificate' },
-    { key: 'graduation', label: 'Graduation Certificate' },
-    { key: 'pan', label: 'PAN Card' },
-    { key: 'aadhar', label: 'Aadhar Card' },
-    { key: 'photo', label: 'Passport Photo' },
-    { key: 'passport', label: 'Passport Document' }
-  ];
-
-  const toggleDoc = (key) => {
-    setRejectedDocs(prev =>
-      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
-    );
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content animate-slide-up" style={{ maxWidth: '450px' }} onClick={e => e.stopPropagation()}>
-        <div className="modal-header-banner" style={{ padding: '1.5rem', background: status === 'APPROVED' ? '#10b981' : '#ef4444' }}>
-          <div className="header-text">
-            <h2>Review Onboarding</h2>
-            <p style={{ opacity: 0.9, fontSize: '0.875rem' }}>{employee.name}</p>
-          </div>
-          <button className="close-btn-light" onClick={onClose}><X size={20} /></button>
-        </div>
-
-        <div className="profile-body" style={{ padding: '1.5rem' }}>
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Decision</label>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <button
-                type="button"
-                onClick={() => setStatus('APPROVED')}
-                style={{
-                  flex: 1, padding: '0.75rem', borderRadius: '10px', border: '2px solid',
-                  borderColor: status === 'APPROVED' ? '#10b981' : '#e2e8f0',
-                  background: status === 'APPROVED' ? '#ecfdf5' : 'white',
-                  color: status === 'APPROVED' ? '#059669' : '#64748b',
-                  fontWeight: 700, cursor: 'pointer'
-                }}
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatus('REJECTED')}
-                style={{
-                  flex: 1, padding: '0.75rem', borderRadius: '10px', border: '2px solid',
-                  borderColor: status === 'REJECTED' ? '#ef4444' : '#e2e8f0',
-                  background: status === 'REJECTED' ? '#fef2f2' : 'white',
-                  color: status === 'REJECTED' ? '#dc2626' : '#64748b',
-                  fontWeight: 700, cursor: 'pointer'
-                }}
-              >
-                Reject
-              </button>
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Remarks</label>
-            <textarea
-              value={remarks}
-              onChange={e => setRemarks(e.target.value)}
-              placeholder="e.g. Passbook is blurry..."
-              style={{ width: '100%', padding: '0.75rem', borderRadius: '10px', border: '1px solid #e2e8f0', minHeight: '80px', fontSize: '0.875rem' }}
-            />
-          </div>
-
-          {status === 'REJECTED' && (
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Select Documents for Re-upload</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem' }}>
-                {docOptions.map(doc => (
-                  <button
-                    key={doc.key}
-                    type="button"
-                    onClick={() => toggleDoc(doc.key)}
-                    style={{
-                      padding: '0.5rem', borderRadius: '6px', border: '1px solid',
-                      fontSize: '0.75rem', textAlign: 'left',
-                      borderColor: rejectedDocs.includes(doc.key) ? '#ef4444' : '#e2e8f0',
-                      background: rejectedDocs.includes(doc.key) ? '#fee2e2' : '#f8fafc',
-                      color: rejectedDocs.includes(doc.key) ? '#dc2626' : '#475569',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {doc.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="modal-footer-centered" style={{ padding: '1.5rem', background: '#f8fafc' }}>
-          <button className="secondary-btn-wide" onClick={onClose} style={{ flex: 1 }}>Cancel</button>
-          <button
-            className="submit-btn-wide"
-            onClick={() => onSubmit({ status, remarks, rejectedDocuments: rejectedDocs })}
-            style={{ flex: 2, background: status === 'APPROVED' ? '#10b981' : '#ef4444' }}
-          >
-            Confirm {status === 'APPROVED' ? 'Approval' : 'Rejection'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 export default EmployeeList;

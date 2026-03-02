@@ -1,13 +1,206 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Upload, Plus, Trash2, CheckCircle, ChevronRight, ChevronLeft } from 'lucide-react';
 import apiService from '../../../services/api';
+import { findByPattern, findProof, scavengeValue, scavengePath } from '../../../utils/normalizeEmployee';
 
 const EmployeeOnboardingForm = () => {
     const [searchParams] = useSearchParams();
     const token = searchParams.get('token');
     const [step, setStep] = useState(1);
     const [errors, setErrors] = useState({});
+    const [loading, setLoading] = useState(false);
+    const [rejectedFields, setRejectedFields] = useState([]);
+
+    useEffect(() => {
+        if (token) {
+            fetchExistingData(token);
+        }
+    }, [token]);
+
+    const fetchExistingData = async (onboardingToken) => {
+        setLoading(true);
+        try {
+            console.log("🔍 Fetching existing onboarding data for token:", onboardingToken);
+            const data = await apiService.getOnboardingByToken(onboardingToken);
+            if (data) {
+                console.log("✅ [DEBUG] Oboarding Data Found:", data);
+                console.log("📦 [DEBUG] Data Keys:", Object.keys(data));
+                if (data.rejectedDocuments) {
+                    setRejectedFields(data.rejectedDocuments);
+                }
+                mapEmployeeToForm(data);
+            }
+        } catch (error) {
+            console.error("❌ Failed to fetch existing data:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const mapEmployeeToForm = (empRaw) => {
+        if (!empRaw) return;
+
+        // --- PRE-PARSING (Align with normalizeEmployee.js) ---
+        let emp = { ...empRaw };
+        Object.keys(empRaw).forEach(key => {
+            const val = empRaw[key];
+            if (typeof val === 'string' && val.length > 2 && (val.trim().startsWith('{') || val.trim().startsWith('['))) {
+                try {
+                    const parsed = JSON.parse(val);
+                    if (parsed && typeof parsed === 'object') {
+                        emp[key] = parsed;
+                    }
+                } catch (e) { }
+            }
+        });
+
+        // --- Map Personal ---
+        setPersonal({
+            fullName: emp.fullName || '',
+            phone: emp.phoneNumber || emp.phone || '',
+            bloodGroup: emp.bloodGroup || '',
+            email: emp.email || '',
+            permAddress: emp.permanentAddress || emp.permAddress || '',
+            presAddress: emp.presentAddress || emp.presAddress || '',
+            fatherName: emp.fathersName || emp.fatherName || '',
+            fatherPhone: emp.fathersPhone || emp.fatherPhone || '',
+            motherName: emp.mothersName || emp.motherName || '',
+            motherPhone: emp.mothersPhone || emp.motherPhone || '',
+            emergencyName: emp.emergencyContactName || emp.emergencyName || '',
+            emergencyRel: emp.emergencyRelationship || emp.emergencyRel || '',
+            emergencyPhone: emp.emergencyNumber || emp.emergencyPhone || '',
+            dateOfBirth: emp.dateOfBirth ? (Array.isArray(emp.dateOfBirth) ? formatDate(emp.dateOfBirth) : emp.dateOfBirth.split('T')[0]) : '',
+        });
+
+        const mapEdu = (eduRaw, patterns = []) => {
+            let edu = eduRaw;
+            if (!edu && patterns.length > 0) {
+                edu = scavengeValue(emp, patterns);
+            }
+
+            // If scavenge found a string (likely flattened field), try to find other sibling fields
+            if (typeof edu === 'string' && patterns.length > 0) {
+                const prefix = patterns[0].toLowerCase();
+                const school = scavengeValue(emp, [prefix + 'School', prefix + 'Institution', prefix + 'College', prefix + 'Name']) || edu;
+                const ht = scavengeValue(emp, [prefix + 'HallTicket', prefix + 'RollNo', prefix + 'Id']);
+                const yr = scavengeValue(emp, [prefix + 'Year', prefix + 'Passout', prefix + 'Date']);
+                const score = scavengeValue(emp, [prefix + 'Percentage', prefix + 'Cgpa', prefix + 'Marks']);
+                const cert = scavengePath(emp, [prefix + 'Certificate', prefix + 'File', prefix + 'Doc']);
+                const memo = scavengePath(emp, [prefix + 'Marks', prefix + 'Memo', prefix + 'Transcript']);
+
+                edu = {
+                    institutionName: school,
+                    hallTicketNo: ht,
+                    passoutYear: yr,
+                    percentageCgpa: score,
+                    certificatePath: cert,
+                    marksMemoPath: memo
+                };
+            }
+
+            if (!edu) return { school: '', htNumber: '', year: '', percentage: '', certificate: null };
+
+            const certPath = edu.certificatePath || scavengePath(edu, ['certificate', 'certPath', 'doc', 'file']);
+            const memoPath = edu.marksMemoPath || scavengePath(edu, ['marksMemo', 'marks', 'memo', 'transcript']);
+
+            return {
+                school: edu.institutionName || scavengeValue(edu, ['institution', 'college', 'school', 'university', 'board']) || '',
+                htNumber: edu.hallTicketNo || scavengeValue(edu, ['hallTicket', 'htNumber', 'rollNo']) || '',
+                year: edu.passoutYear || scavengeValue(edu, ['year', 'passout', 'date', 'passing', 'completion']) || '',
+                percentage: edu.percentageCgpa || scavengeValue(edu, ['percentage', 'cgpa', 'marks', 'score', 'grade']) || '',
+                certificate: certPath ? { name: certPath.split('/').pop(), isServerFile: true, path: certPath } : null,
+                marksMemo: memoPath ? { name: memoPath.split('/').pop(), isServerFile: true, path: memoPath } : null,
+            };
+        };
+
+        // --- Map Education ---
+        const eduState = {
+            ssc: mapEdu(emp.ssc, ['ssc', '10th', 'secondary']),
+            inter: mapEdu(emp.intermediate, ['inter', '12th', 'higherSecondary']),
+            grad: mapEdu(emp.graduation, ['graduation', 'degree', 'ug']),
+            postGrad: (emp.postGraduations || []).map(pg => mapEdu(pg)),
+            otherCerts: (emp.otherCertificates || []).map(cert => ({
+                institute: cert.instituteName || scavengeValue(cert, ['institute', 'school', 'college']) || '',
+                certNumber: cert.certificateNumber || scavengeValue(cert, ['certificateNumber', 'regNo']) || '',
+                certificate: (cert.certificatePath || scavengePath(cert, ['certificate', 'file'])) ? {
+                    name: (cert.certificatePath || scavengePath(cert, ['certificate', 'file'])).split('/').pop(),
+                    isServerFile: true,
+                    path: cert.certificatePath || scavengePath(cert, ['certificate', 'file'])
+                } : null,
+            })),
+        };
+        console.log("📚 [DEBUG] Mapped Education State:", eduState);
+        setEducation(eduState);
+
+        // --- Map Experience ---
+        setExperience({
+            internships: (emp.internships || []).map(int => ({
+                company: int.companyName || '',
+                joining: int.joiningDate || '',
+                relieving: int.relievingDate || '',
+                id: int.internshipId || '',
+                duration: int.duration || '',
+                offerLetter: int.offerLetterPath ? { name: int.offerLetterPath.split('/').pop(), isServerFile: true, path: int.offerLetterPath } : null,
+                relievingLetter: int.experienceCertificatePath ? { name: int.experienceCertificatePath.split('/').pop(), isServerFile: true, path: int.experienceCertificatePath } : null,
+            })),
+            workHistory: (emp.workExperiences || []).map(work => ({
+                company: work.companyName || '',
+                years: work.yearsOfExp || '',
+                offerLetter: work.offerLetterPath ? { name: work.offerLetterPath.split('/').pop(), isServerFile: true, path: work.offerLetterPath } : null,
+                relievingLetter: work.relievingLetterPath ? { name: work.relievingLetterPath.split('/').pop(), isServerFile: true, path: work.relievingLetterPath } : null,
+                payslips: work.payslipsPath ? { name: work.payslipsPath.split('/').pop(), isServerFile: true, path: work.payslipsPath } : null,
+                experienceCert: work.experienceCertificatePath ? { name: work.experienceCertificatePath.split('/').pop(), isServerFile: true, path: work.experienceCertificatePath } : null,
+            }))
+        });
+
+        // --- Map Bank ---
+        setBank({
+            name: emp.bankName || '',
+            branch: emp.branchName || '',
+            accNumber: emp.accountNumber || '',
+            ifsc: emp.ifscCode || '',
+            docType: emp.passbookPath ? 'Passbook' : 'Passbook',
+            docImage: emp.passbookPath ? { name: emp.passbookPath.split('/').pop(), isServerFile: true, path: emp.passbookPath } : null,
+            upiId: emp.upiId || ''
+        });
+
+        // --- Map Documents ---
+        const pan = findProof(emp, 'PAN') || emp.panProof || scavengeValue(emp, ['pan_card', 'pan_file', 'panProof']) || {};
+        const aadhar = findProof(emp, 'AADHAR') || emp.aadharProof || scavengeValue(emp, ['aadhar_card', 'aadhar_file', 'aadharProof']) || {};
+        const photo = findProof(emp, 'PHOTO') || emp.photoProof || scavengeValue(emp, ['photo', 'passportPhoto', 'photoProof']) || {};
+        const passport = findProof(emp, 'PASSPORT') || emp.passportProof || scavengeValue(emp, ['passport', 'passportDoc', 'passport_file', 'passportProof']) || {};
+        const voter = findProof(emp, 'VOTER') || emp.voterProof || scavengeValue(emp, ['voter', 'voterId', 'voter_file', 'voterProof']) || {};
+
+        const getDocPath = (doc) => {
+            if (!doc) return null;
+            const isStrPath = (v) => typeof v === 'string' && (v.includes('/') || v.includes('\\') || v.includes('.'));
+            if (isStrPath(doc)) return doc;
+            if (typeof doc === 'object') {
+                return doc.filePath || doc.path || doc.certificatePath || doc.url || Object.values(doc).find(isStrPath);
+            }
+            return null;
+        };
+
+        const docState = {
+            panNumber: pan.documentNumber || scavengeValue(emp, ['panNumber', 'panId', 'panNo']) || '',
+            panCard: getDocPath(pan) ? { name: getDocPath(pan).split('/').pop(), isServerFile: true, path: getDocPath(pan) } : null,
+            aadharNumber: aadhar.documentNumber || scavengeValue(emp, ['aadharNumber', 'aadharId', 'aadharNo']) || '',
+            aadharCard: getDocPath(aadhar) ? { name: getDocPath(aadhar).split('/').pop(), isServerFile: true, path: getDocPath(aadhar) } : null,
+            passportPhoto: getDocPath(photo) ? { name: getDocPath(photo).split('/').pop(), isServerFile: true, path: getDocPath(photo) } : null,
+            passportDoc: getDocPath(passport) ? { name: getDocPath(passport).split('/').pop(), isServerFile: true, path: getDocPath(passport) } : null,
+            voterId: getDocPath(voter) ? { name: getDocPath(voter).split('/').pop(), isServerFile: true, path: getDocPath(voter) } : null,
+        };
+        console.log("📄 [DEBUG] Mapped Documents State:", docState);
+        setDocuments(docState);
+    };
+
+    const formatDate = (arr) => {
+        if (!arr || !Array.isArray(arr)) return '';
+        const [y, m, d] = arr;
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    };
+
 
     const validateStep = (currentStep) => {
         let newErrors = {};
@@ -126,6 +319,15 @@ const EmployeeOnboardingForm = () => {
     });
 
     // --- Handlers ---
+    const isFieldRejected = (fieldName) => {
+        if (!rejectedFields || rejectedFields.length === 0) return false;
+        return rejectedFields.some(rf => {
+            const pattern = rf.toLowerCase();
+            const field = fieldName.toLowerCase();
+            return field.includes(pattern) || pattern.includes(field);
+        });
+    };
+
     const handlePersonalChange = (e) => {
         const { name, value } = e.target;
         setPersonal(prev => ({ ...prev, [name]: value }));
@@ -440,36 +642,43 @@ const EmployeeOnboardingForm = () => {
             }
 
             // 2. Add files (with correct part names matching backend @RequestPart)
-            if (bank.docImage) formData.append('passbook', bank.docImage);
-            if (education.ssc.certificate) formData.append('sscCertificate', education.ssc.certificate);
-            if (education.ssc.marksMemo) formData.append('ssc_marks_file', education.ssc.marksMemo);
-            if (education.inter.certificate) formData.append('inter_file', education.inter.certificate);
-            if (education.inter.marksMemo) formData.append('inter_marks_file', education.inter.marksMemo);
-            if (education.grad.certificate) formData.append('grad_file', education.grad.certificate);
-            if (education.grad.marksMemo) formData.append('grad_marks_file', education.grad.marksMemo);
+            // Use helper to append only if it's a real File (not an existing server file object)
+            const appendFile = (key, file) => {
+                if (file && file instanceof File) {
+                    formData.append(key, file);
+                }
+            };
+
+            appendFile('passbook', bank.docImage);
+            appendFile('ssc_certificate', education.ssc.certificate);
+            appendFile('ssc_marks', education.ssc.marksMemo);
+            appendFile('inter_certificate', education.inter.certificate);
+            appendFile('inter_marks', education.inter.marksMemo);
+            appendFile('grad_certificate', education.grad.certificate);
+            appendFile('grad_marks', education.grad.marksMemo);
 
             education.postGrad.forEach((pg, i) => {
-                if (pg.certificate) formData.append(`post_grad_file_${i}`, pg.certificate);
-                if (pg.marksMemo) formData.append(`post_grad_marks_file_${i}`, pg.marksMemo);
+                appendFile(`post_grad_file_${i}`, pg.certificate);
+                appendFile(`post_grad_marks_file_${i}`, pg.marksMemo);
             });
 
             experience.internships.forEach((int, i) => {
-                if (int.offerLetter) formData.append(`internship_offer_file_${i}`, int.offerLetter);
-                if (int.relievingLetter) formData.append(`internship_cert_file_${i}`, int.relievingLetter);
+                appendFile(`internship_offer_file_${i}`, int.offerLetter);
+                appendFile(`internship_cert_file_${i}`, int.relievingLetter);
             });
 
             experience.workHistory.forEach((work, i) => {
-                if (work.offerLetter) formData.append(`work_offer_file_${i}`, work.offerLetter);
-                if (work.relievingLetter) formData.append(`work_relieving_file_${i}`, work.relievingLetter);
-                if (work.payslips) formData.append(`work_payslips_file_${i}`, work.payslips);
-                if (work.experienceCert) formData.append(`work_exp_cert_file_${i}`, work.experienceCert);
+                appendFile(`work_offer_file_${i}`, work.offerLetter);
+                appendFile(`work_relieving_file_${i}`, work.relievingLetter);
+                appendFile(`work_payslips_file_${i}`, work.payslips);
+                appendFile(`work_exp_cert_file_${i}`, work.experienceCert);
             });
 
-            if (documents.panCard) formData.append('pan_file', documents.panCard);
-            if (documents.aadharCard) formData.append('aadhar_file', documents.aadharCard);
-            if (documents.passportPhoto) formData.append('photo', documents.passportPhoto);
-            if (documents.passportDoc) formData.append('passport_file', documents.passportDoc);
-            if (documents.voterId) formData.append('voter_file', documents.voterId);
+            appendFile('pan', documents.panCard);
+            appendFile('aadhar', documents.aadharCard);
+            appendFile('photo', documents.passportPhoto);
+            appendFile('passport', documents.passportDoc);
+            appendFile('voter', documents.voterId);
 
             console.log("📤 Submitting Multipart data to backend...");
             const response = await apiService.submitOnboarding(formData, token);
@@ -494,6 +703,13 @@ const EmployeeOnboardingForm = () => {
                     <p>Please fill out your details accurately.</p>
                 </div>
 
+                {loading && (
+                    <div className="loading-overlay">
+                        <div className="spinner"></div>
+                        <p>Loading your details...</p>
+                    </div>
+                )}
+
                 <div className="step-indicator">
                     <span className={step >= 1 ? 'active' : ''}>1. Personal</span>
                     <span className="line"></span>
@@ -514,14 +730,14 @@ const EmployeeOnboardingForm = () => {
                         <div className="form-section animate-fade-in">
                             <h2>Personal Details</h2>
                             <div className="row">
-                                <Input label="Full Name (as per Aadhar)" name="fullName" val={personal.fullName} fn={handlePersonalChange} req error={errors.fullName} />
-                                <Input label="Phone Number" name="phone" val={personal.phone} fn={handlePersonalChange} req type="tel" error={errors.phone} />
+                                <Input label="Full Name (as per Aadhar)" name="fullName" val={personal.fullName} fn={handlePersonalChange} req error={errors.fullName} rejected={isFieldRejected('fullName')} />
+                                <Input label="Phone Number" name="phone" val={personal.phone} fn={handlePersonalChange} req type="tel" error={errors.phone} rejected={isFieldRejected('phone')} />
                             </div>
                             <div className="row">
-                                <Input label="Email ID" name="email" val={personal.email} fn={handlePersonalChange} req type="email" error={errors.email} />
-                                <div className={`input-group ${errors.bloodGroup ? 'error' : ''}`}>
-                                    <label>Blood Group</label>
-                                    <select name="bloodGroup" value={personal.bloodGroup} onChange={handlePersonalChange} className={`form-input ${errors.bloodGroup ? 'error' : ''}`}>
+                                <Input label="Email ID" name="email" val={personal.email} fn={handlePersonalChange} req type="email" error={errors.email} rejected={isFieldRejected('email')} />
+                                <div className={`input-group ${errors.bloodGroup || isFieldRejected('bloodGroup') ? 'error' : ''}`}>
+                                    <label>Blood Group {isFieldRejected('bloodGroup') && <span className="rejected-badge">Rejected</span>}</label>
+                                    <select name="bloodGroup" value={personal.bloodGroup} onChange={handlePersonalChange} className={`form-input ${errors.bloodGroup || isFieldRejected('bloodGroup') ? 'error' : ''}`}>
                                         <option value="">Select</option>
                                         <option value="A+">A+</option>
                                         <option value="A-">A-</option>
@@ -533,41 +749,44 @@ const EmployeeOnboardingForm = () => {
                                         <option value="AB-">AB-</option>
                                     </select>
                                     {errors.bloodGroup && <span className="error-msg">{errors.bloodGroup}</span>}
+                                    {isFieldRejected('bloodGroup') && <span className="error-msg">This field was rejected.</span>}
                                 </div>
-                                <Input label="Date of Birth" name="dateOfBirth" val={personal.dateOfBirth} fn={handlePersonalChange} req type="date" error={errors.dateOfBirth} />
+                                <Input label="Date of Birth" name="dateOfBirth" val={personal.dateOfBirth} fn={handlePersonalChange} req type="date" error={errors.dateOfBirth} rejected={isFieldRejected('dateOfBirth')} />
                             </div>
 
                             <h3>Address</h3>
                             <div className="row">
-                                <div className={`input-group ${errors.permAddress ? 'error' : ''}`}>
-                                    <label>Permanent Address</label>
-                                    <textarea name="permAddress" value={personal.permAddress} onChange={handlePersonalChange} className={`form-input ${errors.permAddress ? 'error' : ''}`} required rows="3"></textarea>
+                                <div className={`input-group ${errors.permAddress || isFieldRejected('permanentAddress') ? 'error' : ''}`}>
+                                    <label>Permanent Address {isFieldRejected('permanentAddress') && <span className="rejected-badge">Rejected</span>}</label>
+                                    <textarea name="permAddress" value={personal.permAddress} onChange={handlePersonalChange} className={`form-input ${errors.permAddress || isFieldRejected('permanentAddress') ? 'error' : ''}`} required rows="3"></textarea>
                                     {errors.permAddress && <span className="error-msg">{errors.permAddress}</span>}
+                                    {isFieldRejected('permanentAddress') && <span className="error-msg">This field was rejected.</span>}
                                 </div>
-                                <div className={`input-group ${errors.presAddress ? 'error' : ''}`}>
-                                    <label>Present Address</label>
-                                    <textarea name="presAddress" value={personal.presAddress} onChange={handlePersonalChange} className={`form-input ${errors.presAddress ? 'error' : ''}`} required rows="3"></textarea>
+                                <div className={`input-group ${errors.presAddress || isFieldRejected('presentAddress') ? 'error' : ''}`}>
+                                    <label>Present Address {isFieldRejected('presentAddress') && <span className="rejected-badge">Rejected</span>}</label>
+                                    <textarea name="presAddress" value={personal.presAddress} onChange={handlePersonalChange} className={`form-input ${errors.presAddress || isFieldRejected('presentAddress') ? 'error' : ''}`} required rows="3"></textarea>
                                     {errors.presAddress && <span className="error-msg">{errors.presAddress}</span>}
+                                    {isFieldRejected('presentAddress') && <span className="error-msg">This field was rejected.</span>}
                                 </div>
                             </div>
 
                             <h3>Family Details</h3>
                             <div className="row">
-                                <Input label="Father's Name" name="fatherName" val={personal.fatherName} fn={handlePersonalChange} req error={errors.fatherName} />
-                                <Input label="Father's Phone" name="fatherPhone" val={personal.fatherPhone} fn={handlePersonalChange} req error={errors.fatherPhone} />
+                                <Input label="Father's Name" name="fatherName" val={personal.fatherName} fn={handlePersonalChange} req error={errors.fatherName} rejected={isFieldRejected('fathersName')} />
+                                <Input label="Father's Phone" name="fatherPhone" val={personal.fatherPhone} fn={handlePersonalChange} req error={errors.fatherPhone} rejected={isFieldRejected('fathersPhone')} />
                             </div>
                             <div className="row">
-                                <Input label="Mother's Name" name="motherName" val={personal.motherName} fn={handlePersonalChange} req error={errors.motherName} />
-                                <Input label="Mother's Phone" name="motherPhone" val={personal.motherPhone} fn={handlePersonalChange} req error={errors.motherPhone} />
+                                <Input label="Mother's Name" name="motherName" val={personal.motherName} fn={handlePersonalChange} req error={errors.motherName} rejected={isFieldRejected('mothersName')} />
+                                <Input label="Mother's Phone" name="motherPhone" val={personal.motherPhone} fn={handlePersonalChange} req error={errors.motherPhone} rejected={isFieldRejected('mothersPhone')} />
                             </div>
 
                             <h3>Emergency Contact</h3>
                             <div className="row">
-                                <Input label="Contact Name" name="emergencyName" val={personal.emergencyName} fn={handlePersonalChange} req error={errors.emergencyName} />
-                                <Input label="Relationship" name="emergencyRel" val={personal.emergencyRel} fn={handlePersonalChange} req error={errors.emergencyRel} />
+                                <Input label="Contact Name" name="emergencyName" val={personal.emergencyName} fn={handlePersonalChange} req error={errors.emergencyName} rejected={isFieldRejected('emergencyContactName')} />
+                                <Input label="Relationship" name="emergencyRel" val={personal.emergencyRel} fn={handlePersonalChange} req error={errors.emergencyRel} rejected={isFieldRejected('emergencyRelationship')} />
                             </div>
                             <div className="row">
-                                <Input label="Emergency Number" name="emergencyPhone" val={personal.emergencyPhone} fn={handlePersonalChange} req error={errors.emergencyPhone} />
+                                <Input label="Emergency Number" name="emergencyPhone" val={personal.emergencyPhone} fn={handlePersonalChange} req error={errors.emergencyPhone} rejected={isFieldRejected('emergencyNumber')} />
                             </div>
 
                             <div className="form-actions right">
@@ -581,9 +800,9 @@ const EmployeeOnboardingForm = () => {
                         <div className="form-section animate-fade-in">
                             <h2>Education Details</h2>
 
-                            <EducationBlock title="SSC" data={education.ssc} onChange={(f, v) => handleEduChange('ssc', f, v)} schoolLabel="School Name" req errors={errors} />
-                            <EducationBlock title="Intermediate" data={education.inter} onChange={(f, v) => handleEduChange('inter', f, v)} req errors={errors} />
-                            <EducationBlock title="Graduation" data={education.grad} onChange={(f, v) => handleEduChange('grad', f, v)} hasMarskMemo certLabel="Provisional Certificate" schoolLabel="College Name" req errors={errors} />
+                            <EducationBlock title="SSC" data={education.ssc} onChange={(f, v) => handleEduChange('ssc', f, v)} schoolLabel="School Name" req errors={errors} rejected={isFieldRejected('SSC')} />
+                            <EducationBlock title="Intermediate" data={education.inter} onChange={(f, v) => handleEduChange('inter', f, v)} req errors={errors} rejected={isFieldRejected('Intermediate')} />
+                            <EducationBlock title="Graduation" data={education.grad} onChange={(f, v) => handleEduChange('grad', f, v)} hasMarskMemo certLabel="Provisional Certificate" schoolLabel="College Name" req errors={errors} rejected={isFieldRejected('Graduation')} />
 
                             {/* Post Graduation */}
                             <div className="dynamic-section">
@@ -652,29 +871,31 @@ const EmployeeOnboardingForm = () => {
                                     <button type="button" className="btn-add" onClick={addInternship}><Plus size={14} /> Add</button>
                                 </div>
                                 {experience.internships.map((int, i) => (
-                                    <div key={i} className="dynamic-card">
+                                    <div key={i} className={`dynamic-card ${isFieldRejected('Internship') ? 'error' : ''}`}>
                                         <button type="button" className="btn-del" onClick={() => removeInternship(i)}><Trash2 size={16} /></button>
                                         <div className="row">
-                                            <Input label="Company Name" val={int.company} fn={(e) => updateInternship(i, 'company', e.target.value)} />
+                                            <Input label="Company Name" val={int.company} fn={(e) => updateInternship(i, 'company', e.target.value)} rejected={isFieldRejected('Internship')} />
                                         </div>
                                         <div className="row">
-                                            <Input type="date" label="Joining Date" val={int.joining} fn={(e) => updateInternship(i, 'joining', e.target.value)} />
-                                            <Input type="date" label="Relieving Date" val={int.relieving} fn={(e) => updateInternship(i, 'relieving', e.target.value)} />
+                                            <Input type="date" label="Joining Date" val={int.joining} fn={(e) => updateInternship(i, 'joining', e.target.value)} rejected={isFieldRejected('Internship')} />
+                                            <Input type="date" label="Relieving Date" val={int.relieving} fn={(e) => updateInternship(i, 'relieving', e.target.value)} rejected={isFieldRejected('Internship')} />
                                         </div>
                                         <div className="row">
-                                            <Input label="Internship ID" val={int.id} fn={(e) => updateInternship(i, 'id', e.target.value)} />
-                                            <Input label="Duration (Months/Years)" val={int.duration} fn={(e) => updateInternship(i, 'duration', e.target.value)} />
+                                            <Input label="Internship ID" val={int.id} fn={(e) => updateInternship(i, 'id', e.target.value)} rejected={isFieldRejected('Internship')} />
+                                            <Input label="Duration (Months/Years)" val={int.duration} fn={(e) => updateInternship(i, 'duration', e.target.value)} rejected={isFieldRejected('Internship')} />
                                         </div>
                                         <div className="row">
                                             <FileInput
                                                 label="Offer Letter"
                                                 onChange={(file) => handleFileChange('experience', 'internships', 'offerLetter', file, i)}
                                                 fileName={int.offerLetter?.name}
+                                                rejected={isFieldRejected('Internship')}
                                             />
                                             <FileInput
                                                 label="Experience Certificate"
                                                 onChange={(file) => handleFileChange('experience', 'internships', 'relievingLetter', file, i)}
                                                 fileName={int.relievingLetter?.name}
+                                                rejected={isFieldRejected('Internship')}
                                             />
                                         </div>
                                     </div>
@@ -688,22 +909,24 @@ const EmployeeOnboardingForm = () => {
                                     <button type="button" className="btn-add" onClick={addWork}><Plus size={14} /> Add</button>
                                 </div>
                                 {experience.workHistory.map((work, i) => (
-                                    <div key={i} className="dynamic-card">
+                                    <div key={i} className={`dynamic-card ${isFieldRejected('Work Experience') ? 'error' : ''}`}>
                                         <button type="button" className="btn-del" onClick={() => removeWork(i)}><Trash2 size={16} /></button>
                                         <div className="row">
-                                            <Input label="Company Name" val={work.company} fn={(e) => updateWork(i, 'company', e.target.value)} />
-                                            <Input label="Years of Exp" val={work.years} fn={(e) => updateWork(i, 'years', e.target.value)} />
+                                            <Input label="Company Name" val={work.company} fn={(e) => updateWork(i, 'company', e.target.value)} rejected={isFieldRejected('Work Experience')} />
+                                            <Input label="Years of Exp" val={work.years} fn={(e) => updateWork(i, 'years', e.target.value)} rejected={isFieldRejected('Work Experience')} />
                                         </div>
                                         <div className="row">
                                             <FileInput
                                                 label="Offer Letter"
                                                 onChange={(file) => updateWork(i, 'offerLetter', file)}
                                                 fileName={work.offerLetter?.name}
+                                                rejected={isFieldRejected('Work Experience')}
                                             />
                                             <FileInput
                                                 label="Relieving Letter"
                                                 onChange={(file) => updateWork(i, 'relievingLetter', file)}
                                                 fileName={work.relievingLetter?.name}
+                                                rejected={isFieldRejected('Work Experience')}
                                             />
                                         </div>
                                         <div className="row">
@@ -711,11 +934,13 @@ const EmployeeOnboardingForm = () => {
                                                 label="Payslips (Last 3 Months)"
                                                 onChange={(file) => updateWork(i, 'payslips', file)}
                                                 fileName={work.payslips?.name}
+                                                rejected={isFieldRejected('Work Experience')}
                                             />
                                             <FileInput
                                                 label="Experience Certificate"
                                                 onChange={(file) => updateWork(i, 'experienceCert', file)}
                                                 fileName={work.experienceCert?.name}
+                                                rejected={isFieldRejected('Work Experience')}
                                             />
                                         </div>
                                     </div>
@@ -734,38 +959,40 @@ const EmployeeOnboardingForm = () => {
                         <div className="form-section animate-fade-in">
                             <h2>Bank Details</h2>
                             <div className="row">
-                                <Input label="Bank Name" name="name" val={bank.name} fn={handleBankChange} req error={errors.name} />
-                                <Input label="Branch Name" name="branch" val={bank.branch} fn={handleBankChange} req error={errors.branch} />
+                                <Input label="Bank Name" name="name" val={bank.name} fn={handleBankChange} req error={errors.name} rejected={isFieldRejected('bankName')} />
+                                <Input label="Branch Name" name="branch" val={bank.branch} fn={handleBankChange} req error={errors.branch} rejected={isFieldRejected('branchName')} />
                             </div>
                             <div className="row">
-                                <Input label="Account Number" name="accNumber" val={bank.accNumber} fn={handleBankChange} req error={errors.accNumber} />
-                                <Input label="IFSC Code" name="ifsc" val={bank.ifsc} fn={handleBankChange} req error={errors.ifsc} />
+                                <Input label="Account Number" name="accNumber" val={bank.accNumber} fn={handleBankChange} req error={errors.accNumber} rejected={isFieldRejected('accountNumber')} />
+                                <Input label="IFSC Code" name="ifsc" val={bank.ifsc} fn={handleBankChange} req error={errors.ifsc} rejected={isFieldRejected('ifscCode')} />
                             </div>
 
                             <div className="row">
-                                <Input label="UPI ID" name="upiId" val={bank.upiId} fn={handleBankChange} req error={errors.upiId} />
+                                <Input label="UPI ID" name="upiId" val={bank.upiId} fn={handleBankChange} req error={errors.upiId} rejected={isFieldRejected('upiId')} />
                             </div>
 
                             <h3>Document Upload</h3>
                             <div className="row">
-                                <div className="input-group">
-                                    <label>Document Type</label>
+                                <div className={`input-group ${isFieldRejected('passbookPath') ? 'error' : ''}`}>
+                                    <label>Document Type {isFieldRejected('passbookPath') && <span className="rejected-badge">Rejected</span>}</label>
                                     <select
                                         name="docType"
                                         value={bank.docType}
                                         onChange={handleBankChange}
-                                        className="form-input"
+                                        className={`form-input ${isFieldRejected('passbookPath') ? 'error' : ''}`}
                                     >
                                         <option value="Passbook">Passbook</option>
                                         <option value="Statement">Bank Statement</option>
                                         <option value="Cheque">Cancelled Cheque</option>
                                     </select>
+                                    {isFieldRejected('passbookPath') && <span className="error-msg">This document was rejected.</span>}
                                 </div>
                                 <FileInput
                                     label={`Upload ${bank.docImage ? ' (Selected)' : bank.docType}`}
                                     onChange={(file) => handleFileChange('bank', null, 'docImage', file)}
                                     fileName={bank.docImage?.name}
                                     error={errors.bankDoc}
+                                    rejected={isFieldRejected('passbookPath')}
                                 />
                             </div>
 
@@ -783,24 +1010,26 @@ const EmployeeOnboardingForm = () => {
 
                             <h3>Identity Proofs</h3>
                             <div className="row">
-                                <Input label="PAN Card Number" name="panNumber" val={documents.panNumber} fn={handleDocumentChange} req error={errors.panNumber} />
+                                <Input label="PAN Card Number" name="panNumber" val={documents.panNumber} fn={handleDocumentChange} req error={errors.panNumber} rejected={isFieldRejected('PAN')} />
                                 <FileInput
                                     label={`Upload PAN Card`}
                                     onChange={(file) => handleFileChange('documents', null, 'panCard', file)}
                                     fileName={documents.panCard?.name}
                                     req
                                     error={errors.panCard}
+                                    rejected={isFieldRejected('PAN')}
                                 />
                             </div>
 
                             <div className="row">
-                                <Input label="Aadhar Card Number" name="aadharNumber" val={documents.aadharNumber} fn={handleDocumentChange} req error={errors.aadharNumber} />
+                                <Input label="Aadhar Card Number" name="aadharNumber" val={documents.aadharNumber} fn={handleDocumentChange} req error={errors.aadharNumber} rejected={isFieldRejected('AADHAR')} />
                                 <FileInput
                                     label={`Upload Aadhar Card`}
                                     onChange={(file) => handleFileChange('documents', null, 'aadharCard', file)}
                                     fileName={documents.aadharCard?.name}
                                     req
                                     error={errors.aadharCard}
+                                    rejected={isFieldRejected('AADHAR')}
                                 />
                             </div>
 
@@ -812,11 +1041,13 @@ const EmployeeOnboardingForm = () => {
                                     fileName={documents.passportPhoto?.name}
                                     req
                                     error={errors.passportPhoto}
+                                    rejected={isFieldRejected('PHOTO')}
                                 />
                                 <FileInput
                                     label="Passport Document (Optional)"
                                     onChange={(file) => handleFileChange('documents', null, 'passportDoc', file)}
                                     fileName={documents.passportDoc?.name}
+                                    rejected={isFieldRejected('PASSPORT')}
                                 />
                             </div>
 
@@ -825,6 +1056,7 @@ const EmployeeOnboardingForm = () => {
                                     label="Voter ID Card (Optional)"
                                     onChange={(file) => handleFileChange('documents', null, 'voterId', file)}
                                     fileName={documents.voterId?.name}
+                                    rejected={isFieldRejected('VOTER')}
                                 />
                             </div>
 
@@ -1124,6 +1356,48 @@ const EmployeeOnboardingForm = () => {
                     to { opacity: 1; transform: translateY(0); }
                 }
 
+                .rejected-badge {
+                    background: #fdf4f4;
+                    color: #d93025;
+                    font-size: 0.7rem;
+                    font-weight: 700;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    border: 1px solid #d93025;
+                    text-transform: uppercase;
+                    margin-left: 0.5rem;
+                }
+
+                .loading-overlay {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: rgba(255, 255, 255, 0.8);
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 100;
+                    border-radius: 12px;
+                }
+
+                .spinner {
+                    width: 40px;
+                    height: 40px;
+                    border: 4px solid #f3f3f3;
+                    border-top: 4px solid #2563eb;
+                    border-radius: 50%;
+                    animation: spin 1s linear infinite;
+                    margin-bottom: 1rem;
+                }
+
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+
                 @media (max-width: 600px) {
                     .row { grid-template-columns: 1fr; gap: 1rem; }
                     .form-container { padding: 1rem 0.5rem; }
@@ -1134,28 +1408,35 @@ const EmployeeOnboardingForm = () => {
     );
 };
 
-const Input = ({ label, name, val, fn, req, type = "text", error }) => (
-    <div className={`input-group ${error ? 'error' : ''}`}>
-        <label>{label} {req && <span style={{ color: 'red' }}>*</span>}</label>
+const Input = ({ label, name, val, fn, req, type = "text", error, rejected }) => (
+    <div className={`input-group ${error || rejected ? 'error' : ''}`}>
+        <label>
+            {label} {req && <span style={{ color: 'red' }}>*</span>}
+            {rejected && <span className="rejected-badge">Rejected</span>}
+        </label>
         <input
             type={type}
             name={name}
             value={val || ''}
             onChange={fn}
             required={req}
-            className={`form-input ${error ? 'error' : ''}`}
+            className={`form-input ${error || rejected ? 'error' : ''}`}
         />
         {error && <span className="error-msg">{error}</span>}
+        {rejected && <span className="error-msg">This field was rejected. Please update it.</span>}
     </div>
 );
 
-const FileInput = ({ label, onChange, fileName, req, error }) => {
+const FileInput = ({ label, onChange, fileName, req, error, rejected }) => {
     const fileRef = React.useRef(null);
 
     return (
-        <div className={`input-group ${error ? 'error' : ''}`}>
-            <label>{label} {req && <span style={{ color: 'red' }}>*</span>}</label>
-            <div className={`file-upload-box ${error ? 'error' : ''}`} onClick={() => fileRef.current.click()}>
+        <div className={`input-group ${error || rejected ? 'error' : ''}`}>
+            <label>
+                {label} {req && <span style={{ color: 'red' }}>*</span>}
+                {rejected && <span className="rejected-badge">Rejected</span>}
+            </label>
+            <div className={`file-upload-box ${error || rejected ? 'error' : ''}`} onClick={() => fileRef.current.click()}>
                 <input
                     type="file"
                     ref={fileRef}
@@ -1166,16 +1447,17 @@ const FileInput = ({ label, onChange, fileName, req, error }) => {
                 <div>{fileName ? fileName : 'Click to upload file'}</div>
             </div>
             {error && <span className="error-msg">{error}</span>}
+            {rejected && <span className="error-msg">This document was rejected. Please re-upload.</span>}
         </div>
     );
 };
 
-const EducationBlock = ({ title, data, onChange, hasMarskMemo, schoolLabel = "School/College Name", certLabel, req, errors = {} }) => {
+const EducationBlock = ({ title, data, onChange, hasMarskMemo, schoolLabel = "School/College Name", certLabel, req, errors = {}, rejected }) => {
     const levelKey = title.toLowerCase().includes('ssc') ? 'ssc' : title.toLowerCase().includes('inter') ? 'inter' : 'grad';
 
     return (
-        <div className="edu-block">
-            <h3>{title}</h3>
+        <div className={`edu-block ${rejected ? 'error' : ''}`}>
+            <h3>{title} {rejected && <span className="rejected-badge">Rejected</span>}</h3>
             <div className="row">
                 <Input
                     label={schoolLabel}
@@ -1200,6 +1482,7 @@ const EducationBlock = ({ title, data, onChange, hasMarskMemo, schoolLabel = "Sc
                     fn={(e) => onChange('year', e.target.value)}
                     req={req}
                     error={errors[`${levelKey}_year`]}
+                    rejected={rejected}
                 />
                 <Input
                     label="Percentage/CGPA"
@@ -1207,6 +1490,7 @@ const EducationBlock = ({ title, data, onChange, hasMarskMemo, schoolLabel = "Sc
                     fn={(e) => onChange('percentage', e.target.value)}
                     req={req}
                     error={errors[`${levelKey}_percentage`]}
+                    rejected={rejected}
                 />
             </div>
             <div className="row">
@@ -1216,6 +1500,7 @@ const EducationBlock = ({ title, data, onChange, hasMarskMemo, schoolLabel = "Sc
                     fileName={data.certificate?.name}
                     req={req}
                     error={errors[`${levelKey}_certificate`]}
+                    rejected={rejected}
                 />
                 {hasMarskMemo && (
                     <FileInput
@@ -1223,6 +1508,7 @@ const EducationBlock = ({ title, data, onChange, hasMarskMemo, schoolLabel = "Sc
                         onChange={(file) => onChange('marksMemo', file)}
                         fileName={data.marksMemo?.name}
                         req={req}
+                        rejected={rejected}
                     />
                 )}
             </div>
