@@ -1,5 +1,6 @@
 import { X, Package, Tag, ArrowRightLeft, MessageSquare, Image as ImageIcon, User, Building2, FileText } from 'lucide-react';
-import { getFileUrl } from '../../../utils/normalizeEmployee';
+import { buildFileUrl } from '../../../utils/file';
+import { API_BASE_URL } from '../../../config/api';
 
 const ViewAssetModal = ({ isOpen, onClose, asset }) => {
     if (!isOpen || !asset) return null;
@@ -171,7 +172,7 @@ const ViewAssetModal = ({ isOpen, onClose, asset }) => {
                         <div className="photos-container">
                             {asset.photos && asset.photos.length > 0 ? (
                                 asset.photos.map((photo, index) => {
-                                    const fileUrl = getFileUrl(photo);
+                                    const fileUrl = buildFileUrl(photo);
                                     const lowerUrl = fileUrl.toLowerCase();
                                     const isImage = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(lowerUrl);
                                     const isPdf = lowerUrl.endsWith(".pdf");
@@ -184,21 +185,21 @@ const ViewAssetModal = ({ isOpen, onClose, asset }) => {
                                                     alt={`Asset ${index + 1}`}
                                                     onError={(e) => {
                                                         const target = e.target;
-                                                        if (target.dataset.errorHandled) return;
-                                                        target.dataset.errorHandled = 'true';
-
-                                                        const currentSrc = target.src;
-                                                        const match = currentSrc.match(/\/api\/(?:onboarding\/)?files\/(.+)$/);
-                                                        const relativePath = match ? match[1] : '';
-
-                                                        if (currentSrc.includes('/api/files/')) {
-                                                            target.src = `/api/onboarding/files/${relativePath}`;
-                                                        } else if (currentSrc.includes('/api/onboarding/files/')) {
-                                                            target.src = `/api/files/${relativePath}`;
-                                                            target.dataset.errorHandled = 'final';
-                                                        } else {
+                                                        if (target.dataset.errorState === '1') {
                                                             target.src = '/placeholder.png';
                                                             target.classList.add('broken-link');
+                                                            return;
+                                                        }
+
+                                                        target.dataset.errorState = '1';
+                                                        const currentSrc = target.src;
+                                                        const match = currentSrc.match(/\/(?:onboarding\/)?files\/(.+)$/);
+                                                        const relativePath = match ? match[1] : '';
+
+                                                        if (currentSrc.includes('/onboarding/files/')) {
+                                                            target.src = `${API_BASE_URL}/files/${relativePath}`;
+                                                        } else {
+                                                            target.src = `${API_BASE_URL}/onboarding/files/${relativePath}`;
                                                         }
                                                     }}
                                                 />

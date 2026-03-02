@@ -1,6 +1,8 @@
 import React from 'react';
 import { X, User as UserIcon, Building2, Mail, Calendar, Phone, ShieldCheck, Tag, Briefcase, MapPin, CheckCircle2, XCircle, Eye, FileText } from 'lucide-react';
-import { normalizeEmployee, getFileUrl } from '../../../utils/normalizeEmployee';
+import { normalizeEmployee } from '../../../utils/normalizeEmployee';
+import { buildFileUrl } from '../../../utils/file';
+import { API_BASE_URL } from '../../../config/api';
 
 const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocument }) => {
     React.useEffect(() => {
@@ -33,17 +35,19 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
             if (response.ok) {
                 window.open(url, '_blank');
             } else {
-                // Try fallback logic
-                const filename = url.split('/').pop();
-                let fallbackUrl = '';
+                // Extract relative path
+                const parts = url.split(/[/\\]/);
+                const relativePath = parts.pop();
 
-                if (url.includes('/api/onboarding/files/')) {
-                    fallbackUrl = `/api/files/${filename}`;
-                } else if (url.includes('/api/files/')) {
-                    fallbackUrl = `/api/onboarding/files/${filename}`;
+                // Try alternate endpoint resolution via simple path reversal
+                let fallbackUrl = '';
+                if (url.includes('/onboarding/files/')) {
+                    fallbackUrl = `${API_BASE_URL}/files/${relativePath}`;
+                } else {
+                    fallbackUrl = `${API_BASE_URL}/onboarding/files/${relativePath}`;
                 }
 
-                if (fallbackUrl) {
+                if (fallbackUrl && fallbackUrl !== url) {
                     const fbResponse = await fetch(fallbackUrl, { method: 'HEAD' });
                     if (fbResponse.ok) {
                         window.open(fallbackUrl, '_blank');
@@ -95,7 +99,7 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
         }
 
         const lowerPath = (path || "").toLowerCase();
-        const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(lowerPath);
+        const isImage = /\.(jpg|jpeg|png|gif|webp|avif|jfif)$/i.test(lowerPath);
         const isPdf = lowerPath.endsWith(".pdf");
 
         const fileUrl = getFileUrl(path);
@@ -110,27 +114,48 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                             onLoad={(e) => { e.target.parentElement.classList.remove('doc-loading'); }}
                             onError={(e) => {
                                 const target = e.target;
-                                if (target.dataset.errorHandled) return;
-                                target.dataset.errorHandled = 'true';
+                                const errState = target.dataset.errorState || '0';
 
-                                // Try alternate API points while preserving directory structure
-                                const currentSrc = target.src;
-                                let relativePath = '';
-                                if (currentSrc.includes('/api/files/')) relativePath = currentSrc.split('/api/files/').pop();
-                                else if (currentSrc.includes('/api/onboarding/files/')) relativePath = currentSrc.split('/api/onboarding/files/').pop();
+                                const showErrorOverlay = (t) => {
+                                    t.style.display = 'none';
+                                    if (!t.parentElement.querySelector('.error-overlay')) {
+                                        t.parentElement.classList.add('doc-load-failed');
+                                        const errorIcon = document.createElement('div');
+                                        errorIcon.className = 'error-overlay';
+                                        errorIcon.innerHTML = '<span>⚠️ Load Failed</span>';
+                                        t.parentElement.appendChild(errorIcon);
+                                    }
+                                };
 
-                                if (currentSrc.includes('/api/files/')) {
-                                    target.src = `/api/onboarding/files/${relativePath}`;
-                                } else if (currentSrc.includes('/api/onboarding/files/')) {
-                                    target.src = `/api/files/${relativePath}`;
-                                    target.dataset.errorHandled = 'final'; // Prevent further loops
+                                if (errState === '0') {
+                                    const currentSrc = target.src;
+                                    const pathParts = currentSrc.split(/[/\\]/);
+                                    const filename = pathParts.pop();
+                                    const hasFolder = pathParts.some(p => p !== '' && p !== 'api' && p !== 'files' && p !== 'onboarding' && p !== 'localhost:5174' && p !== 'localhost:5173');
+
+                                    if (!hasFolder) {
+                                        // Shallow path (just a filename) - likely missing test data. 
+                                        // Don't retry alternate endpoints to avoid extra console noise.
+                                        showErrorOverlay(target);
+                                        return;
+                                    }
+
+                                    // First failure for a structured path — try the alternate API endpoint
+                                    target.dataset.errorState = '1';
+                                    let relativePath = '';
+                                    if (currentSrc.includes('/onboarding/files/')) {
+                                        relativePath = currentSrc.split('/onboarding/files/').pop();
+                                        target.src = `${API_BASE_URL}/files/${relativePath}`;
+                                    } else if (currentSrc.includes('/files/')) {
+                                        relativePath = currentSrc.split('/files/').pop();
+                                        target.src = `${API_BASE_URL}/onboarding/files/${relativePath}`;
+                                    } else {
+                                        showErrorOverlay(target);
+                                    }
                                 } else {
-                                    target.style.display = 'none';
-                                    target.parentElement.classList.add('doc-load-failed');
-                                    const errorIcon = document.createElement('div');
-                                    errorIcon.className = 'error-overlay';
-                                    errorIcon.innerHTML = '<span>⚠️ Load Failed</span>';
-                                    target.parentElement.appendChild(errorIcon);
+                                    // Second failure — both endpoints failed, show error
+                                    // console.warn('[ViewEmployeeModal] Both endpoints failed for:', target.src);
+                                    showErrorOverlay(target);
                                 }
                             }}
                         />
@@ -179,7 +204,7 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                     <div className="header-info">
                         <div className="profile-badge">
                             {emp.photoPath ? (() => {
-                                const photoUrl = getFileUrl(emp.photoPath);
+                                const photoUrl = buildFileUrl(emp.photoPath);
                                 // TEMPORARY TEST: hardcode to confirm path resolution vs backend issue
                                 // const photoUrl = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200';
                                 console.log("Rendering photo →", photoUrl, "| raw photoPath:", emp.photoPath);
@@ -188,21 +213,33 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                         src={photoUrl}
                                         alt={emp.name}
                                         onError={(e) => {
-                                            const currentSrc = e.target.src;
-                                            if (e.target.dataset.fallbackExhausted) {
-                                                e.target.style.display = 'none';
-                                                e.target.parentElement.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
-                                                return;
-                                            }
+                                            const target = e.target;
+                                            if (photoErrState === '0') {
+                                                const currentSrc = target.src;
+                                                const pathParts = currentSrc.split(/[/\\]/);
+                                                const filename = pathParts.pop();
+                                                const hasFolder = pathParts.some(p => p !== '' && p !== 'api' && p !== 'files' && p !== 'onboarding' && p !== 'localhost:5174' && p !== 'localhost:5173');
 
-                                            const match = currentSrc.match(/\/api\/(?:onboarding\/)?files\/(.+)$/);
-                                            const relativePath = match ? match[1] : '';
+                                                if (!hasFolder) {
+                                                    // Shallow path - don't retry. Show initials.
+                                                    target.style.display = 'none';
+                                                    target.parentElement.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
+                                                    return;
+                                                }
 
-                                            if (currentSrc.includes('/api/files/')) {
-                                                e.target.src = `/api/onboarding/files/${relativePath}`;
+                                                target.dataset.photoErrState = '1';
+                                                const match = currentSrc.match(/\/(?:onboarding\/)?files\/(.+)$/);
+                                                const relativePath = match ? match[1] : '';
+
+                                                if (currentSrc.includes('/onboarding/files/')) {
+                                                    target.src = `${API_BASE_URL}/files/${relativePath}`;
+                                                } else {
+                                                    target.src = `${API_BASE_URL}/onboarding/files/${relativePath}`;
+                                                }
                                             } else {
-                                                e.target.src = `/api/files/${relativePath}`;
-                                                e.target.dataset.fallbackExhausted = 'true';
+                                                // Both endpoints failed — show initials fallback
+                                                target.style.display = 'none';
+                                                target.parentElement.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
                                             }
                                         }}
                                         style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}

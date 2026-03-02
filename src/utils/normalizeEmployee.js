@@ -181,7 +181,7 @@ export const scavengePath = (obj, patterns) => {
     const filePatterns = [...patterns, 'Path', 'File', 'Doc', 'Url', 'Certificate', 'Image', 'Photo', 'Memo'];
     const val = scavengeValue(obj, filePatterns);
 
-    const isPath = (v) => typeof v === 'string' && (v.includes('/') || v.includes('\\') || v.includes('.') || v.length > 20);
+    const isPath = (v) => typeof v === 'string' && (v.includes('/') || v.includes('\\') || (v.includes('.') && v.length > 5) || v.length > 20);
 
     if (isPath(val)) return val;
 
@@ -457,14 +457,20 @@ export const normalizeEmployee = (emp, departments = [], roles = [], entities = 
         passportPath: expandedEmp.passportPath || findProof(expandedEmp, 'PASSPORT')?.filePath || scavengePath(expandedEmp, ['passport', 'passportDoc', 'passport_document', 'passport_file', 'passportProof', 'passport_proof']),
 
         panNumber: (() => {
-            const looksLikeFile = (v) => typeof v === 'string' && /\.(png|jpg|jpeg|gif|webp|pdf)$/i.test(v);
+            const looksLikeFile = (v) => typeof v === 'string' && /\.(png|jpg|jpeg|gif|webp|pdf|avif|jfif|bmp|svg|tiff|avif)$/i.test(v);
             const raw = expandedEmp.panNumber || findProof(expandedEmp, 'PAN')?.documentNumber || scavengeValue(expandedEmp, ['panNumber', 'panId', 'panNo', 'pan_number', 'pan']);
-            return looksLikeFile(raw) ? null : raw;
+            if (!raw || typeof raw !== 'string') return raw || null;
+            const s = raw.trim();
+            if (looksLikeFile(s) || s.length > 25 || s.includes('/') || s.includes('\\')) return null;
+            return s;
         })(),
         aadharNumber: (() => {
-            const looksLikeFile = (v) => typeof v === 'string' && /\.(png|jpg|jpeg|gif|webp|pdf)$/i.test(v);
+            const looksLikeFile = (v) => typeof v === 'string' && /\.(png|jpg|jpeg|gif|webp|pdf|avif|jfif|bmp|svg|tiff|avif)$/i.test(v);
             const raw = expandedEmp.aadharNumber || findProof(expandedEmp, 'AADHAR')?.documentNumber || scavengeValue(expandedEmp, ['aadharNumber', 'aadharId', 'aadharNo', 'aadhar_number', 'aadhar']);
-            return looksLikeFile(raw) ? null : raw;
+            if (!raw || typeof raw !== 'string') return raw || null;
+            const s = raw.trim();
+            if (looksLikeFile(s) || s.length > 25 || s.includes('/') || s.includes('\\')) return null;
+            return s;
         })(),
 
         educationCount: (expandedEmp.ssc ? 1 : 0) + (expandedEmp.intermediate ? 1 : 0) + (expandedEmp.graduation ? 1 : 0) + (expandedEmp.postGraduations?.length || 0) + (expandedEmp.otherCertificates?.length || 0),
@@ -483,60 +489,12 @@ export const normalizeEmployee = (emp, departments = [], roles = [], entities = 
     return normalized;
 };
 
+import { buildFileUrl } from './file';
+
 /**
  * Build a safe, backend-compatible image URL
- * - Preserves directory structure (slashes) while encoding filenames
- * - Encodes special chars (spaces become %20) so Spring decodes correctly
- * - Defaults to placeholder if no path
  */
-export const getFileUrl = (pathOrObj) => {
-    if (!pathOrObj) return '/placeholder.png';
-
-    // Accept any string containing '/', '\\', or '.' (covers bare filenames like img1.png)
-    const isStrPath = (v) => typeof v === 'string' && (v.includes('/') || v.includes('\\') || v.includes('.'));
-
-    let path = null;
-    if (typeof pathOrObj === 'string') {
-        path = pathOrObj.trim();
-    } else if (typeof pathOrObj === 'object' && pathOrObj !== null) {
-        // Robust discovery even inside getFileUrl
-        path = pathOrObj.filePath || pathOrObj.path || pathOrObj.certificatePath || pathOrObj.url ||
-            Object.values(pathOrObj).find(isStrPath);
-    }
-
-    if (!path || (typeof path === 'string' && path.trim() === '')) {
-        return '/placeholder.png';
-    }
-
-    console.log("getFileUrl input:", pathOrObj);
-
-    // 1. Handle base64 or blob URLs
-    const sPath = path.toString().trim();
-    if (sPath.startsWith('data:') || sPath.startsWith('blob:')) return sPath;
-
-    // 2. Clean path and preserve slashes
-    // Convert backslashes to forward slashes and remove leading slashes/prefixes
-    let cleanPath = sPath.replace(/\\/g, '/');
-    if (cleanPath.startsWith('http')) {
-        if (cleanPath.includes('/api/files/')) cleanPath = cleanPath.split('/api/files/').pop();
-        else if (cleanPath.includes('/api/onboarding/files/')) cleanPath = cleanPath.split('/api/onboarding/files/').pop();
-        else if (cleanPath.includes('/uploads/')) cleanPath = cleanPath.split('/uploads/').pop();
-    }
-
-    cleanPath = cleanPath.replace(/^\/+/, '');
-    if (cleanPath.startsWith('uploads/')) cleanPath = cleanPath.slice(8);
-    if (cleanPath.startsWith('api/files/')) cleanPath = cleanPath.slice(10);
-    if (cleanPath.startsWith('api/onboarding/files/')) cleanPath = cleanPath.slice(21);
-    cleanPath = cleanPath.replace(/^\/+/, '');
-
-    // 3. Encode segments but join with literal slashes
-    const segments = cleanPath.split('/');
-    const encodedSegments = segments.map(seg => encodeURIComponent(seg));
-
-    const finalUrl = `/api/onboarding/files/${encodedSegments.join('/')}`;
-    console.log("Final photo URL:", finalUrl);
-    return finalUrl;
-};
+export const getFileUrl = (pathOrObj) => buildFileUrl(pathOrObj);
 
 /**
  * Get proof image URL from normalized employee
@@ -550,5 +508,5 @@ export const getProofUrl = (normalizedEmployee, type) => {
 
     if (!proof?.filePath) return '/placeholder.png';
 
-    return getFileUrl(proof.filePath);
+    return buildFileUrl(proof.filePath);
 };

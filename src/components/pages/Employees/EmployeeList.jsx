@@ -23,7 +23,9 @@ import EditEmployeeModal from './EditEmployeeModal';
 import ViewEmployeeModal from './ViewEmployeeModal';
 import apiService from '../../../services/api';
 import Toast from '../../common/Toast';
-import { normalizeEmployee, getFileUrl } from '../../../utils/normalizeEmployee';
+import { normalizeEmployee } from '../../../utils/normalizeEmployee';
+import { buildFileUrl } from '../../../utils/file';
+import { API_BASE_URL } from '../../../config/api';
 
 const EmployeeList = () => {
   const [employees, setEmployees] = useState([]);
@@ -277,8 +279,7 @@ const EmployeeList = () => {
       if (empId) {
         const fullDetails = await apiService.getEmployeeDetail(empId);
         if (fullDetails) {
-          const normalizedDetail = normalizeEmployee(fullDetails);
-          setSelectedEmployee(normalizedDetail);
+          setSelectedEmployee(fullDetails);
           setIsViewModalOpen(true);
           return;
         }
@@ -548,30 +549,12 @@ const EmployeeList = () => {
                       <div className="emp-thumbnail">
                         {emp.photoPath ? (
                           <img
-                            src={getFileUrl(emp.photoPath)}
+                            src={buildFileUrl(emp.photoPath)}
                             alt={emp.name}
                             onError={(e) => {
-                              const currentSrc = e.target.src;
-                              if (e.target.dataset.fallbackExhausted) {
-                                e.target.style.display = 'none';
-                                e.target.parentElement.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
-                                return;
-                              }
-
-                              // Extract relative path
-                              const match = currentSrc.match(/\/api\/(?:onboarding\/)?files\/(.+)$/);
-                              const relativePath = match ? match[1] : '';
-
-                              if (currentSrc.includes('/api/files/')) {
-                                e.target.src = `/api/onboarding/files/${relativePath}`;
-                              } else if (currentSrc.includes('/api/onboarding/files/')) {
-                                e.target.src = `/api/files/${relativePath}`;
-                                e.target.dataset.fallbackExhausted = 'true';
-                              } else {
-                                e.target.dataset.fallbackExhausted = 'true';
-                                e.target.style.display = 'none';
-                                e.target.parentElement.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
-                              }
+                              // Professional UX: immediately fall back to initials on error
+                              e.target.style.display = 'none';
+                              e.target.parentElement.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
                             }}
                           />
                         ) : (
