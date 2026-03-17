@@ -134,59 +134,63 @@
 //   }
 // })
 
+// import { defineConfig } from 'vite'
+// import react from '@vitejs/plugin-react'
+
+// export default defineConfig({
+//   plugins: [react()],
+
+//   server: {
+//     host: true,
+//     port: 5173,
+
+//     proxy: {
+//       '/api': {
+//         target: 'http://192.168.3.105:8090',
+//         changeOrigin: true,
+//         secure: false,
+//         // No rewrite, as the backend seems to expect /api or we're testing with it
+//       },
+//       '/uploads': {
+//         target: 'http://192.168.3.105:8090',
+//         changeOrigin: true,
+//         secure: false,
+//       }
+//     }
+//   }
+// })
+
+// vite.config.js
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import http from 'http'
+
+// Disable keep-alive to fix: "Parse Error: Expected LF after chunk data"
+// Backend sends chunked responses that Node's http-proxy can't handle with keep-alive
+const noKeepAliveAgent = new http.Agent({ keepAlive: false })
 
 export default defineConfig({
   plugins: [react()],
-
   server: {
-    host: true,
+    host: '0.0.0.0',
+    port: 5173,
 
     proxy: {
-      // This RegExp catches /api + EVERYTHING after it (including /api/onboarding/files/, /api/files/, etc.)
-      '^/api(/.*)?$': {
-        target: 'http://192.168.1.70:8080',
+      '^/api': {
+        target: 'http://100.99.102.32:8090',
         changeOrigin: true,
         secure: false,
+        agent: noKeepAliveAgent,
 
-        onProxyReq: (proxyReq, req) => {
-          let ct = proxyReq.getHeader('content-type') || req.headers['content-type'] || ''
-          if (Array.isArray(ct)) ct = ct[0]
-
-          if (typeof ct === 'string' && ct.toLowerCase().includes('multipart/form-data')) {
-            const cleaned = ct.replace(/;\s*charset=utf-8/gi, '')
-            if (ct !== cleaned) {
-              proxyReq.setHeader('content-type', cleaned)
-              console.log(`[Proxy] Multipart stripped: ${ct} → ${cleaned}`)
-            }
-          }
-        },
-
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq, req) => {
-            console.log(`[PROXY REQ] ${req.method} ${req.url}`)
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            // Force Identity encoding so backend calculates Content-Length 
+            // instead of using 'Transfer-Encoding: chunked' which it is corrupting
+            proxyReq.setHeader('accept-encoding', 'identity')
+            console.log('[Proxy] Forwarding:', req.method, req.url)
           })
-          proxy.on('proxyRes', (proxyRes, req) => {
-            console.log(`[PROXY RES] ${req.url} → ${proxyRes.statusCode}`)
-          })
-          proxy.on('error', (err, req) => {
-            console.error(`[PROXY ERROR] ${req.url} → ${err.message}`)
-          })
-        }
-      },
-
-      // Keep /uploads/** proxy in case any image src uses /uploads/ (optional but harmless)
-      '^/uploads': {
-        target: 'http://192.168.1.70:8080',
-        changeOrigin: true,
-        secure: false,
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq, req) => {
-            console.log(`[PROXY UPLOADS REQ] ${req.method} ${req.url}`)
-          })
-          proxy.on('proxyRes', (proxyRes, req) => {
-            console.log(`[PROXY UPLOADS RES] ${req.url} → ${proxyRes.statusCode}`)
+          proxy.on('error', (err, req, res) => {
+            console.log('[Proxy Error]', err.message)
           })
         }
       }

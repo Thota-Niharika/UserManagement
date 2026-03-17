@@ -195,9 +195,22 @@ const EmployeeList = () => {
     try {
       const createdEmployee = await apiService.createEmployee(newEmployee);
       console.log("[DEBUG] Backend Response (createEmployee):", createdEmployee);
+
+      // 🛡️ DEDUPLICATION GUARD: Ensure we don't add the same employee twice
+      // The normalizeEmployee already handles if createdEmployee is an array
       const normalized = normalizeEmployee(createdEmployee, departments, roles, entities);
-      console.log("[DEBUG] Normalized Employee (createEmployee):", normalized);
-      setEmployees([...employees, decorateEmployee(normalized, createdEmployee)]);
+      const decorated = decorateEmployee(normalized, createdEmployee);
+
+      setEmployees(prev => {
+        const id = decorated.id || decorated.employeeId;
+        const exists = prev.some(emp => (emp.id || emp.employeeId) === id);
+        if (exists) {
+          console.warn(`[DEDUPE] Employee ${id} already exists in list. Updating instead of appending.`);
+          return prev.map(emp => (emp.id || emp.employeeId) === id ? decorated : emp);
+        }
+        return [...prev, decorated];
+      });
+
       setIsAddModalOpen(false);
       setToast({
         show: true,
@@ -228,29 +241,35 @@ const EmployeeList = () => {
     }
   };
 
-  const handleDirectApprove = async (emp) => {
+  const handleFinalReview = async (emp, status) => {
     try {
       const empId = emp.id || emp.employeeId;
+      let remarks = 'All documents verified';
+
+      if (status === 'REJECTED') {
+        remarks = window.prompt("Enter overall rejection remarks (sent via email):") || '';
+        if (remarks === null) return; // Cancelled
+      }
+
       await apiService.reviewOnboarding({
         employeeId: empId,
-        status: 'APPROVED',
-        remarks: 'Self-Approved',
-        rejectedDocuments: []
+        status: status,
+        remarks: remarks
       });
 
       setToast({
         show: true,
-        message: 'Onboarding approved successfully!',
+        message: `Onboarding ${status === 'APPROVED' ? 'approved' : 'rejected'} successfully!`,
         type: 'success'
       });
 
       setIsViewModalOpen(false);
       fetchData(); // Refresh list
     } catch (error) {
-      console.error('Failed to approve onboarding:', error);
+      console.error('Failed to process final review:', error);
       setToast({
         show: true,
-        message: 'Failed to approve: ' + error.message,
+        message: 'Failed to process review: ' + error.message,
         type: 'error'
       });
     }
@@ -279,6 +298,12 @@ const EmployeeList = () => {
       if (empId) {
         const fullDetails = await apiService.getEmployeeDetail(empId);
         if (fullDetails) {
+          // 🚀 [SYC FIX] Update the list state with the detailed data
+          // This ensures that extra data (like photos) fetched in details is preserved in list
+          const normalized = normalizeEmployee(fullDetails, departments, roles, entities);
+          const decorated = decorateEmployee(normalized, fullDetails);
+          setEmployees(prev => prev.map(e => (e.id || e.employeeId) === empId ? decorated : e));
+          
           setSelectedEmployee(fullDetails);
           setIsViewModalOpen(true);
           return;
@@ -302,28 +327,34 @@ const EmployeeList = () => {
     const emp = selectedEmployee;
     if (!emp) return;
 
-    if (window.confirm(`Are you sure you want to reject the "${label}" for ${emp.name}? This will trigger a re-onboarding email where this field will be empty.`)) {
-      try {
-        const empId = emp.id || emp.employeeId;
+    // Ask for confirmation first
+    if (!window.confirm(`Are you sure you want to reject the "${label}" for ${emp.name}? This will trigger a re-onboarding email where this field will be empty.`)) {
+      return;
+    }
 
-        const entityId = (doc.id && !isNaN(doc.id)) ? Number(doc.id) : null;
+    // Prompt for rejection reason/remarks
+    const remarks = window.prompt(`Enter rejection reason for "${label}" (optional):`) ?? '';
 
-        console.log("Reject Payload Detail:", {
-          employeeId: empId,
-          entityType: doc.entityType,
-          entityId: entityId,
-          fullDoc: doc
-        });
+    try {
+      const empId = emp.id || emp.employeeId;
+      const entityId = (doc.id && !isNaN(doc.id)) ? Number(doc.id) : null;
 
-        await apiService.rejectOnboardingDocument(empId, doc.entityType, entityId);
+      console.log("Reject Payload Detail:", {
+        employeeId: empId,
+        entityType: doc.entityType,
+        entityId: entityId,
+        remarks,
+        fullDoc: doc
+      });
 
-        setToast({ show: true, message: `Document "${label}" rejected successfully. A re-onboarding email has been sent to ${emp.name}.`, type: 'success' });
-        fetchData(); // Refresh list to see potentially empty fields or updated status
-        setIsViewModalOpen(false); // Close view to refresh state when reopened
-      } catch (error) {
-        console.error('Failed to reject document:', error);
-        setToast({ show: true, message: 'Failed to reject document: ' + error.message, type: 'error' });
-      }
+      await apiService.rejectOnboardingDocument(empId, doc.entityType, entityId, remarks);
+
+      setToast({ show: true, message: `Document "${label}" rejected. Re-onboarding email sent to ${emp.name}.`, type: 'success' });
+      fetchData();
+      setIsViewModalOpen(false);
+    } catch (error) {
+      console.error('Failed to reject document:', error);
+      setToast({ show: true, message: 'Failed to reject document: ' + error.message, type: 'error' });
     }
   };
 
@@ -371,7 +402,7 @@ const EmployeeList = () => {
         isOpen={isViewModalOpen}
         onClose={() => setIsViewModalOpen(false)}
         employee={selectedEmployee}
-        onApprove={handleDirectApprove}
+        onApprove={handleFinalReview}
         onRejectDocument={handleRejectDocument}
       />
 
@@ -540,8 +571,8 @@ const EmployeeList = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredEmployees.map((emp) => (
-                <tr key={emp.id || emp.employeeId}>
+              {filteredEmployees.map((emp, index) => (
+                <tr key={`${emp.id || emp.employeeId || 'temp'}-${index}-${emp.email}`}>
                   <td className="emp-id-cell">{emp.employeeId || emp.id || '-'}</td>
                   <td className="emp-code-cell">{emp.empCode || '-'}</td>
                   <td className="emp-name-cell">

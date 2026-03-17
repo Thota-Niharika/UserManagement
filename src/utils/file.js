@@ -1,4 +1,7 @@
-import { API_BASE_URL } from '../config/api';
+import { API_BASE_URL as rawBaseUrl } from '../config/api';
+
+// Use relative path in development to go through Vite proxy
+const API_BASE_URL = import.meta.env.DEV ? '/api' : rawBaseUrl;
 
 /**
  * Universal Image Builder Function

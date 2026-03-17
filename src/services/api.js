@@ -1,157 +1,193 @@
-import { API_BASE_URL } from '../config/api';
+import { API_BASE_URL as rawBaseUrl } from '../config/api';
 
-// class ApiService {
-
-//     async request(endpoint, method = 'GET', data = null) {
-//         if (method !== 'GET') {
-//             console.log(`API ${method} Request to ${endpoint}:`, JSON.stringify(data, null, 2));
-//         }
-//         try {
-//             const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-//                 method,
-//                 headers: data instanceof FormData
-//                     ? {}
-//                     : { 'Content-Type': 'application/json' },
-//                 body: method !== 'GET' && data
-//                     ? JSON.stringify(data)
-//                     : null
-//             });
-
-//             if (!response.ok) {
-//                 let errorMessage = `HTTP Error: ${response.status}`;
-
-//                 try {
-//                     const errorData = await response.json();
-//                     console.error("Backend Error:", errorData);
-//                     errorMessage = JSON.stringify(errorData);
-//                 } catch { }
-
-//                 throw new Error(errorMessage);
-//             }
-
-//             return await response.json();
-
-//         } catch (error) {
-//             console.error(`API Error (${endpoint}):`, error);
-//             throw error;
-//         }
-//     }
-
-//     get(endpoint) {
-//         return this.request(endpoint);
-//     }
-
-//     post(endpoint, data) {
-//         return this.request(endpoint, 'POST', data);
-//     }
-
-//     put(endpoint, data) {
-//         return this.request(endpoint, 'PUT', data);
-//     }
-
-//     delete(endpoint) {
-//         return this.request(endpoint, 'DELETE');
-//     }
-
-//     // Departments
-//     getDepartments() { return this.get('/departments'); }
-//     createDepartment(data) { return this.post('/departments', data); }
-
-//     // Roles
-//     getRoles() { return this.get('/roles'); }
-//     createRole(data) { return this.post('/roles', data); }
-
-//     // Entities
-//     getEntities() { return this.get('/entities'); }
-//     createEntity(data) { return this.post('/entities', data); }
-
-//     // Employees
-//     getEmployees() { return this.get('/employees'); }
-//     createEmployee(data) { return this.post('/employees', data); }
-//     updateEmployee(id, data) { return this.put(`/employees/${id}`, data); }
-//     deleteEmployee(id) { return this.delete(`/employees/${id}`); }
-// }
-
-// export default new ApiService();
-
-
-
-
-// API_BASE_URL is now imported from ../config/api
+// Use relative path in development to go through Vite proxy → avoids CORS
+// In production it will use whatever is set in config (full URL or /api)
+const API_BASE_URL = import.meta.env.DEV ? '/api' : rawBaseUrl;
 
 class ApiService {
 
-    async request(endpoint, method = 'GET', data = null) {
+    /**
+     * Helper: Manual data recovery for recursive/truncated backend responses.
+     */
+    recoverData(text) {
+        const data = [];
+        let i = 0;
+        let count = 0;
+        const maxScan = 2000000; // 2MB limit for safety
+        const textToScan = text.length > maxScan ? text.substring(0, maxScan) : text;
 
-        try {
-            const isFormData = data instanceof FormData;
+        while (i < textToScan.length && data.length < 50) {
+            const start = textToScan.indexOf('{', i);
+            if (start === -1) break;
 
-            const options = {
-                method,
-                headers: {}
+            let depth = 0, j = start, inString = false;
+            let foundBoundary = false;
+            // Limit scan depth for each search
+            const scanLimit = Math.min(j + 5000, textToScan.length);
+            while (j < scanLimit) {
+                const char = textToScan[j];
+                if (char === '"' && textToScan[j - 1] !== '\\') inString = !inString;
+                if (!inString) {
+                    if (char === '{') depth++;
+                    else if (char === '}') depth--;
+                    if (depth === 0) { foundBoundary = true; break; }
+                }
+                j++;
+            }
+
+            const fragment = textToScan.substring(start, foundBoundary ? j + 1 : j + 1000);
+            const ext = (pats) => {
+                for (const p of pats) {
+                    const regex = new RegExp(`"${p}"\\s*:\\s*(?:"([^"]*)"|([^,\\s}\\]]+))`, 'i');
+                    const m = fragment.match(regex);
+                    if (m) {
+                        const v = (m[1] !== undefined ? m[1] : m[2])?.trim();
+                        if (!v || v === 'null' || v === 'undefined') continue;
+                        return v.replace(/^"|"$/g, '');
+                    }
+                }
+                return null;
             };
 
-            if (!isFormData) {
-                options.headers['Content-Type'] = 'application/json';
+            const idVal = ext(['id', 'pk', 'uid']);
+            const employeeId = ext(['employeeId', 'empId', 'employee_id', 'empNo', 'employeeNo', 'emp_no', 'employee_no', 'empCode', 'id']);
+            const name = ext(['fullName', 'name', 'full_name', 'employeeName', 'empName']);
+            const email = ext(['email', 'emailId', 'email_address']);
+            const empCode = ext(['empId', 'empNo', 'empCode', 'employeeCode', 'employee_code']);
+
+            if ((idVal || empCode || employeeId) && (name || email)) {
+                const dbId = parseInt(idVal) || parseInt(employeeId) || Math.floor(Math.random() * 1000000);
+                const displayId = String(employeeId || idVal || dbId).trim();
+                const empName = (name || email?.split('@')[0] || `Employee ${displayId}`).trim();
+
+                data.push({
+                    id: dbId,
+                    employeeId: displayId,
+                    fullName: empName,
+                    name: empName,
+                    empCode: empCode || '-',
+                    deptName: ext(['deptName', 'departmentName', 'dept_name', 'dept', 'department']),
+                    roleName: ext(['roleName', 'designation', 'role_name', 'role']),
+                    entityName: ext(['entityName', 'entity_name', 'entity']),
+                    email: email || '-',
+                    phone: ext(['phone', 'phoneNumber', 'mobile', 'mobileNumber']) || '-',
+                    status: ext(['status']) || 'Active',
+                    onboardingDate: ext(['dateOfOnboarding', 'onboardingDate', 'joiningDate', 'doj'])
+                });
+                // Jump past this object
+                i = foundBoundary ? j + 1 : start + 100;
+            } else {
+                i = start + 50; // Jump ahead to next potential object
             }
-
-            if (method !== 'GET' && data) {
-                if (isFormData) {
-                    options.body = data;
-                    // 🔥 CRITICAL: Force-remove Content-Type to strip charset
-                    delete options.headers['Content-Type'];
-                } else {
-                    options.body = JSON.stringify(data);
-                }
-            }
-
-            // FormData requests go directly to fetch without manual boundary construction
-            // The browser will generate the boundary. Proxy will strip the charset.
-            const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
-
-            if (!response.ok) {
-                let errorMessage = `HTTP Error: ${response.status}`;
-                let respText = "";
-
-                try {
-                    respText = await response.text();
-                    const errorData = JSON.parse(respText);
-                    console.error("Backend Error Object:", errorData);
-                    // Extract specific message if available, otherwise stringify
-                    errorMessage = errorData.message || JSON.stringify(errorData);
-                } catch (e) {
-                    console.error("Backend Raw Error Text:", respText);
-                    errorMessage = respText || errorMessage;
-                }
-
-                throw new Error(errorMessage);
-            }
-
-            if (response.status === 204) {
-                return null;
-            }
-
-            const text = await response.text();
-            if (!text) return null;
-
-            let json;
-            try {
-                json = JSON.parse(text);
-            } catch (e) {
-                console.warn('API returned non-JSON response:', text);
-                return text;
-            }
-
-            return json && json.data !== undefined ? json.data : json;
-
-        } catch (error) {
-            console.error(`API Error (${endpoint}):`, error);
-            throw error;
         }
+
+        const unique = {};
+        for (const emp of data) {
+            const key = emp.employeeId || emp.id;
+            if (!unique[key] || (unique[key].empCode === '-' && emp.empCode !== '-')) {
+                unique[key] = emp;
+            }
+        }
+        return Object.values(unique);
+    }
+
+    async request(endpoint, method = 'GET', payload = null) {
+        const isFormData = payload instanceof FormData;
+
+        const options = {
+            method,
+            headers: new Headers()
+        };
+
+        if (method !== 'GET' && payload) {
+            if (isFormData) {
+                options.body = payload;
+            } else {
+                options.headers.set('Content-Type', 'application/json');
+                options.body = JSON.stringify(payload);
+            }
+        }
+
+        const fullUrl = `${API_BASE_URL}${endpoint}`;
+        console.log("Calling API:", fullUrl);
+
+        const response = await fetch(fullUrl, options);
+        if (response.status === 204) return null;
+
+        const text = await response.text();
+
+        // Strip heavy/circular keys that crash JSON.parse
+        const stripJsonKey = (src, key) => {
+            const pattern = `"${key}":`;
+            let out = src;
+            let pos = 0;
+            while (true) {
+                const kStart = out.indexOf(pattern, pos);
+                if (kStart === -1) break;
+                const vStart = kStart + pattern.length;
+                let vi = vStart;
+                while (vi < out.length && /\s/.test(out[vi])) vi++;
+                if (out[vi] !== '{' && out[vi] !== '[') { pos = kStart + 1; continue; }
+                const open = out[vi], close = open === '{' ? '}' : ']';
+                let depth = 1, i = vi + 1, inString = false;
+                while (i < out.length && depth > 0) {
+                    const char = out[i];
+                    if (char === '"' && out[i - 1] !== '\\') inString = !inString;
+                    if (!inString) {
+                        if (char === open) depth++;
+                        else if (char === close) depth--;
+                    }
+                    i++;
+                }
+                let removeFrom = kStart, removeTo = i;
+                if (removeFrom > 0 && out[removeFrom - 1] === ',') removeFrom--;
+                else if (out[removeTo] === ',') removeTo++;
+                out = out.slice(0, removeFrom) + out.slice(removeTo);
+                pos = removeFrom;
+            }
+            return out;
+        };
+
+        let data;
+        try {
+            let safeText = text;
+            for (const key of ['employeeForm', 'onboardingDetails', 'onboardingForm']) {
+                if (safeText.includes(`"${key}":`)) safeText = stripJsonKey(safeText, key);
+            }
+            data = JSON.parse(safeText);
+        } catch (err) {
+            console.warn(`⚠️ JSON Parse failed for ${method} ${endpoint}. Length: ${text.length}. Err: ${err.message}`);
+            
+            // Only attempt recovery for employee list or detail endpoints if they crash
+            if (endpoint.includes('/employees') || endpoint.includes('/onboarding')) {
+                const recovered = this.recoverData(text);
+                if (recovered.length > 0) {
+                    console.log(`✅ Recovered ${recovered.length} items manually.`);
+                    // For GET details or POST creation, return the first recovered item
+                    data = (endpoint.match(/\/\d+$/) || method === 'POST') ? recovered[0] : recovered;
+                } else {
+                    if (method !== 'GET') throw new Error(`Server error (${response.status}): ${text.substring(0, 300)}`);
+                    data = { message: "Data recovery failed", raw: text.substring(0, 500) };
+                }
+            } else {
+                if (method !== 'GET') throw new Error(`Server error (${response.status}): ${text.substring(0, 300)}`);
+                data = { message: "Parse failed", raw: text.substring(0, 500) };
+            }
+        }
+
+        if (response.status === 404) return null;
+        if (!response.ok) {
+            // Special case: If we recovered data from a crashed response, don't throw
+            if (Array.isArray(data) && data.length > 0) return data;
+            if (data && data.employeeId) return data; 
+            
+            throw new Error(data?.message || data?.error || `HTTP ${response.status}`);
+        }
+
+        return data && data.data !== undefined ? data.data : data;
     }
 
     // ---------- GENERIC ----------
-
     get(endpoint) { return this.request(endpoint); }
     post(endpoint, data) { return this.request(endpoint, 'POST', data); }
     put(endpoint, data) { return this.request(endpoint, 'PUT', data); }
@@ -161,111 +197,79 @@ class ApiService {
     // ---------- DEPARTMENTS ----------
     getDepartments() { return this.get('/departments'); }
     createDepartment(data) {
-        // Backend expects { deptId: '...', deptName: '...' }
-        const payload = {
+        return this.post('/departments', {
             deptCode: data.deptCode || data.deptId,
             deptName: data.deptName
-        };
-        return this.post('/departments', payload);
+        });
     }
     updateDepartment(id, data) {
-        const payload = {
+        return this.put(`/departments/${id}`, {
             deptCode: data.deptCode || data.deptId,
             deptName: data.deptName
-        };
-        return this.put(`/departments/${id}`, payload);
+        });
     }
     deleteDepartment(id) { return this.delete(`/departments/${id}`); }
 
     // ---------- ROLES ----------
     getRoles() { return this.get('/roles'); }
     createRole(data) {
-        // Backend expects { roleCode: '...', roleName: '...' }
-        const payload = {
+        return this.post('/roles', {
             roleCode: data.roleCode,
             roleName: data.roleName
-        };
-        return this.post('/roles', payload);
+        });
     }
     updateRole(id, data) {
-        const payload = {
+        return this.put(`/roles/${id}`, {
             roleCode: data.roleCode,
             roleName: data.roleName
-        };
-        return this.put(`/roles/${id}`, payload);
+        });
     }
     deleteRole(id) { return this.delete(`/roles/${id}`); }
 
     // ---------- ENTITIES ----------
     getEntities() { return this.get('/entities'); }
     createEntity(data) {
-        // Backend expects { entityCode: '...', entityName: '...' }
-        const payload = {
+        return this.post('/entities', {
             entityCode: data.entityCode,
             entityName: data.entityName
-        };
-        return this.post('/entities', payload);
+        });
     }
     updateEntity(id, data) {
-        const payload = {
+        return this.put(`/entities/${id}`, {
             entityCode: data.entityCode,
             entityName: data.entityName
-        };
-        return this.put(`/entities/${id}`, payload);
+        });
     }
     deleteEntity(id) { return this.delete(`/entities/${id}`); }
 
     // ---------- EMPLOYEES ----------
+    getEmployees() { return this.get('/employees'); }
+    getEmployeeDetail(id) { return this.get(`/employees/${id}`); }
 
-    getEmployees() {
-        return this.get('/employees');
-    }
-
-    getEmployeeDetail(id) {
-        return this.get(`/employees/${id}`);
-    }
-
-    // Fetch list + enrich each employee with full detail (bank, docs, educations)
     async getEmployeesWithDetails() {
         const list = await this.get('/employees');
-        const employees = Array.isArray(list) ? list : [];
-
-        // Fetch detail for each employee in parallel
-        const detailed = await Promise.all(
-            employees.map(async (emp) => {
-                try {
-                    const detail = await this.get(`/employees/${emp.id}`);
-                    return { ...emp, ...detail };
-                } catch (e) {
-                    console.warn(`[API] Could not fetch detail for employee ${emp.id}:`, e);
-                    return emp;
-                }
-            })
-        );
-        return detailed;
+        // Return the full backend list — no client-side filtering.
+        // Every employee the backend sends must appear in the UI.
+        return Array.isArray(list) ? list : [];
     }
 
     createEmployee(formData) {
-        // 🔥 UI → Backend Mapping aligned with EmployeeServiceImpl.java
-        const payload = {
+        return this.post('/employees', {
             fullName: formData.name,
-            dept: formData.department, // Expects String
-            entity: formData.entity,   // Expects String
-            role: formData.role,       // Expects String
+            dept: formData.department,
+            entity: formData.entity,
+            role: formData.role,
             dateOfOnboarding: formData.dateOfOnboarding,
             dateOfInterview: formData.dateOfInterview,
             dateOfBirth: formData.dateOfBirth,
             email: formData.email,
             phone: formData.phone,
-            status: formData.status || 'ONBOARDING'
-        };
-
-        return this.post('/employees/employees', payload);
+            status: formData.status || "ONBOARDING"
+        });
     }
 
     updateEmployee(id, formData) {
-        // Aligned with EmployeeServiceImpl.java getAllEmployees/patchEmployee
-        const payload = {
+        return this.put(`/employees/${id}`, {
             fullName: formData.name,
             dept: formData.department,
             entity: formData.entity,
@@ -276,15 +280,12 @@ class ApiService {
             email: formData.email,
             phone: formData.phone,
             status: formData.status || 'Active'
-        };
-
-        return this.put(`/employees/${id}`, payload);
+        });
     }
 
-    deleteEmployee(id) {
-        return this.delete(`/employees/${id}`);
-    }
+    deleteEmployee(id) { return this.delete(`/employees/${id}`); }
 
+    // ---------- ONBOARDING ----------
     submitOnboarding(data, token) {
         const endpoint = token ? `/onboarding/submit?token=${encodeURIComponent(token)}` : '/onboarding/submit';
         return this.post(endpoint, data);
@@ -299,19 +300,9 @@ class ApiService {
         return this.post(endpoint, data);
     }
 
-    /**
-     * Generic method for multipart submission with a JSON 'dto' part.
-     * Useful for Spring Boot @RequestPart compatibility.
-     */
     submitWithDto(endpoint, dto, files = {}) {
         const formData = new FormData();
-
-        // Append DTO as a JSON Blob with correct content type
-        formData.append('dto', new Blob([JSON.stringify(dto)], {
-            type: 'application/json'
-        }));
-
-        // Append files if provided
+        formData.append('data', new Blob([JSON.stringify(dto)], { type: 'application/json' }));
         Object.entries(files).forEach(([key, value]) => {
             if (value) {
                 if (Array.isArray(value)) {
@@ -321,26 +312,21 @@ class ApiService {
                 }
             }
         });
-
         return this.post(endpoint, formData);
     }
 
-    getOnboardingDetail(id) {
-        return this.get(`/onboarding/${id}`);
-    }
+    getOnboardingDetail(id) { return this.get(`/onboarding/${id}`); }
 
-    rejectOnboardingDocument(employeeId, entityType, entityId) {
+    rejectOnboardingDocument(employeeId, entityType, entityId, remarks) {
         return this.post('/onboarding/reject-document', {
             employeeId,
             entityType,
-            entityId
+            entityId,
+            remarks: remarks || ''
         });
     }
 
     // ---------- VENDORS ----------
-
-    // ---------- VENDORS ----------
-
     getVendors() { return this.get('/vendors'); }
     createVendor(data) { return this.post('/vendors', data); }
     updateVendor(id, data) { return this.put(`/vendors/${id}`, data); }
@@ -349,60 +335,44 @@ class ApiService {
     // ---------- VENDOR TYPES ----------
     getVendorTypes() { return this.get('/vendor-types'); }
     createVendorType(data) {
-        const payload = {
-            typeName: data.typeName || data.name
-        };
-        return this.post('/vendor-types', payload);
+        return this.post('/vendor-types', { typeName: data.typeName || data.name });
     }
     updateVendorType(id, data) {
-        const payload = {
-            typeName: data.typeName || data.name
-        };
-        return this.put(`/vendor-types/${id}`, payload);
+        return this.put(`/vendor-types/${id}`, { typeName: data.typeName || data.name });
     }
     deleteVendorType(id) { return this.delete(`/vendor-types/${id}`); }
 
     // ---------- ASSET TYPES ----------
     getAssetTypes() { return this.get('/asset-types'); }
     createAssetType(data) {
-        const payload = {
-            typeName: data.typeName || data.name,
-            fields: data.fields || [] // Array of { name: 'RAM', type: 'text', options: [] }
-        };
-        return this.post('/asset-types', payload);
-    }
-    updateAssetType(id, data) {
-        const payload = {
+        return this.post('/asset-types', {
             typeName: data.typeName || data.name,
             fields: data.fields || []
-        };
-        return this.put(`/asset-types/${id}`, payload);
+        });
+    }
+    updateAssetType(id, data) {
+        return this.put(`/asset-types/${id}`, {
+            typeName: data.typeName || data.name,
+            fields: data.fields || []
+        });
     }
     deleteAssetType(id) { return this.delete(`/asset-types/${id}`); }
 
     // ---------- ASSETS ----------
-
     getAssets() { return this.get('/assets'); }
 
     async createAsset(formData) {
-        console.log('🔧 API Service - Creating asset (Multipart):', formData);
-
         const data = new FormData();
-        // Use either backend field names or frontend field names if they were passed
         data.append('assetName', formData.assetName || formData.name);
         data.append('assetTag', formData.assetTag || formData.tag);
         data.append('receiverName', formData.receiverName || '');
         data.append('exchangeType', formData.exchangeType || 'Issue');
         data.append('vendorId', formData.vendorId || formData.vendor?.vendorId || '');
         data.append('remarks', formData.remarks || '');
-
-        // Hardware Specs
         data.append('companyName', formData.companyName || '');
         data.append('generation', formData.generation || '');
         data.append('ram', formData.ram || '');
         data.append('hardDisk', formData.hardDisk || '');
-
-        // Procurement Info
         data.append('procurementType', formData.procurementType || 'Purchasing');
         data.append('purchaseDate', formData.purchaseDate || '');
         data.append('poNumber', formData.poNumber || '');
@@ -415,25 +385,16 @@ class ApiService {
         data.append('agreementNumber', formData.agreementNumber || '');
         data.append('securityDeposit', formData.securityDeposit || '');
 
-        // Custom Fields - Send as JSON string for FormData
         if (formData.customFields) {
             data.append('customFields', JSON.stringify(formData.customFields));
         }
-
-        if (formData.photoFiles && formData.photoFiles.length > 0) {
-            formData.photoFiles.forEach(file => {
-                data.append('files', file);
-            });
+        if (formData.photoFiles) {
+            formData.photoFiles.forEach(file => data.append('files', file));
         }
-
-        console.log('🚀 API Service - Sending createAsset request (Multipart) to /assets');
         return this.post('/assets', data);
     }
 
-
     async updateAsset(id, formData) {
-        console.log('🔧 API Service - Updating asset (JSON via PATCH):', id, formData);
-
         const payload = {
             assetName: formData.assetName || formData.name,
             assetTag: formData.assetTag || formData.tag,
@@ -457,13 +418,8 @@ class ApiService {
             securityDeposit: formData.securityDeposit || '',
             customFields: formData.customFields || {}
         };
-
         const vId = formData.vendorId || formData.vendor?.vendorId;
-        if (vId) {
-            payload.vendor = { vendorId: vId };
-        }
-
-        console.log('🚀 API Service - Sending updateAsset request (JSON) to /assets/' + id);
+        if (vId) payload.vendor = { vendorId: vId };
         return this.patch(`/assets/${id}`, payload);
     }
 

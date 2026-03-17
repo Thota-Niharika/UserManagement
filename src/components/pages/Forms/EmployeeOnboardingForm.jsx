@@ -6,7 +6,13 @@ import { findByPattern, findProof, scavengeValue, scavengePath } from '../../../
 
 const EmployeeOnboardingForm = () => {
     const [searchParams] = useSearchParams();
-    const token = searchParams.get('token');
+
+    // Extract token robustly
+    const token = useMemo(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get('token') || searchParams.get('token');
+    }, [searchParams]);
+
     const [step, setStep] = useState(1);
     const [errors, setErrors] = useState({});
     const [loading, setLoading] = useState(false);
@@ -99,16 +105,16 @@ const EmployeeOnboardingForm = () => {
                 };
             }
 
-            if (!edu) return { school: '', htNumber: '', year: '', percentage: '', certificate: null };
+            if (!edu) return { institutionName: '', htNumber: '', year: '', percentage: '', certificate: null, marksMemo: null };
 
-            const certPath = edu.certificatePath || scavengePath(edu, ['certificate', 'certPath', 'doc', 'file']);
-            const memoPath = edu.marksMemoPath || scavengePath(edu, ['marksMemo', 'marks', 'memo', 'transcript']);
+            const certPath = edu.certificatePath || edu.certificateFilePath || scavengePath(edu, ['certificate', 'certPath', 'doc', 'file']);
+            const memoPath = edu.marksMemoPath || edu.marksMemoFilePath || scavengePath(edu, ['marksMemo', 'marks', 'memo', 'transcript']);
 
             return {
-                school: edu.institutionName || scavengeValue(edu, ['institution', 'college', 'school', 'university', 'board']) || '',
-                htNumber: edu.hallTicketNo || scavengeValue(edu, ['hallTicket', 'htNumber', 'rollNo']) || '',
+                institutionName: edu.institutionName || scavengeValue(edu, ['institution', 'college', 'school', 'university', 'board']) || '',
+                htNumber: edu.hallTicketNo || edu.hallTicketNumber || scavengeValue(edu, ['hallTicket', 'htNumber', 'rollNo']) || '',
                 year: edu.passoutYear || scavengeValue(edu, ['year', 'passout', 'date', 'passing', 'completion']) || '',
-                percentage: edu.percentageCgpa || scavengeValue(edu, ['percentage', 'cgpa', 'marks', 'score', 'grade']) || '',
+                percentage: edu.percentageCgpa || edu.percentage || scavengeValue(edu, ['percentage', 'cgpa', 'marks', 'score', 'grade']) || '',
                 certificate: certPath ? { name: certPath.split('/').pop(), isServerFile: true, path: certPath } : null,
                 marksMemo: memoPath ? { name: memoPath.split('/').pop(), isServerFile: true, path: memoPath } : null,
             };
@@ -216,7 +222,7 @@ const EmployeeOnboardingForm = () => {
             const levels = ['ssc', 'inter', 'grad'];
             for (const level of levels) {
                 const data = education[level];
-                if (!(data.school || data.college)) newErrors[`${level}_college`] = 'Required';
+                if (!data.institutionName) newErrors[`${level}_institutionName`] = 'Required';
                 if (!data.htNumber) newErrors[`${level}_htNumber`] = 'Required';
                 if (!data.year) newErrors[`${level}_year`] = 'Required';
                 if (!data.percentage) newErrors[`${level}_percentage`] = 'Required';
@@ -284,9 +290,9 @@ const EmployeeOnboardingForm = () => {
     });
 
     const [education, setEducation] = useState({
-        ssc: { school: '', htNumber: '', year: '', percentage: '', certificate: null },
-        inter: { college: '', htNumber: '', year: '', percentage: '', certificate: null },
-        grad: { college: '', htNumber: '', year: '', percentage: '', marksMemo: null },
+        ssc: { institutionName: '', htNumber: '', year: '', percentage: '', certificate: null, marksMemo: null },
+        inter: { institutionName: '', htNumber: '', year: '', percentage: '', certificate: null, marksMemo: null },
+        grad: { institutionName: '', htNumber: '', year: '', percentage: '', certificate: null, marksMemo: null },
         postGrad: [], // Array of objects
         otherCerts: [], // { institute: '', certNumber: '', certificate: null }
     });
@@ -313,7 +319,7 @@ const EmployeeOnboardingForm = () => {
         branch: '',
         accNumber: '',
         ifsc: '',
-        docType: 'Passbook',
+        docType: 'PASSBOOK',
         docImage: null,
         upiId: ''
     });
@@ -345,7 +351,7 @@ const EmployeeOnboardingForm = () => {
             ...prev,
             [level]: { ...prev[level], [field]: value }
         }));
-        const errKey = `${level}_${field === 'college' ? 'college' : field}`;
+        const errKey = `${level}_${field}`;
         if (errors[errKey]) {
             setErrors(prev => {
                 const newErrs = { ...prev };
@@ -428,7 +434,7 @@ const EmployeeOnboardingForm = () => {
     const addPostGrad = () => {
         setEducation(prev => ({
             ...prev,
-            postGrad: [...prev.postGrad, { college: '', year: '', percentage: '', certificate: null }]
+            postGrad: [...prev.postGrad, { institutionName: '', year: '', percentage: '', certificate: null }]
         }));
     };
 
@@ -520,6 +526,19 @@ const EmployeeOnboardingForm = () => {
         // Final validation check for the last step
         if (!validateStep(5)) return;
 
+        // Explicit bank details validation
+        if (!bank.name || !bank.accNumber || !bank.ifsc || !bank.branch) {
+            alert("Please fill all bank details");
+            return;
+        }
+
+        const ifsc = bank.ifsc.toUpperCase().trim();
+        const ifscPattern = /^[A-Z]{4}0[0-9]{6}$/;
+        if (!ifscPattern.test(ifsc)) {
+            alert("Invalid IFSC Code. Example: SBIN0001234");
+            return;
+        }
+
         try {
             console.log("🚀 Starting Onboarding Submission (Action Plan: Multipart)...");
 
@@ -535,15 +554,16 @@ const EmployeeOnboardingForm = () => {
                 return fileName;
             };
 
-            const mapEducation = (edu) => {
+            const mapEducation = (edu, type) => {
                 if (!edu) return null;
                 return {
-                    institutionName: edu.school || edu.college || '',
-                    hallTicketNo: edu.htNumber || '',
+                    educationType: type,
+                    institutionName: edu.institutionName || '',
+                    hallTicketNumber: edu.htNumber || '',
                     passoutYear: edu.year || '',
-                    percentageCgpa: edu.percentage || '',
-                    certificatePath: getFileInfo(edu.certificate, "Edu Cert"),
-                    marksMemoPath: getFileInfo(edu.marksMemo, "Edu Marks")
+                    percentage: edu.percentage || '',
+                    certificateFilePath: getFileInfo(edu.certificate, "Edu Cert"),
+                    marksMemoFilePath: getFileInfo(edu.marksMemo, "Edu Marks")
                 };
             };
 
@@ -563,20 +583,23 @@ const EmployeeOnboardingForm = () => {
                 emergencyContactName: personal.emergencyName,
                 emergencyRelationship: personal.emergencyRel,
                 emergencyNumber: personal.emergencyPhone,
-                bankName: bank.name,
-                branchName: bank.branch,
-                accountNumber: bank.accNumber,
-                ifscCode: bank.ifsc,
-                upiId: bank.upiId,
-                passbookPath: getFileInfo(bank.docImage, "Passbook"),
-                ssc: mapEducation(education.ssc),
-                intermediate: mapEducation(education.inter),
-                graduation: mapEducation(education.grad),
-                postGraduations: education.postGrad.map(pg => mapEducation(pg)),
+                bankDetails: {
+                    bankName: bank.name,
+                    branchName: bank.branch,
+                    accountNumber: bank.accNumber,
+                    ifscCode: ifsc,
+                    upiId: bank.upiId,
+                    documentType: bank.docType
+                },
+                documentFilePath: getFileInfo(bank.docImage, "Bank Document"),
+                ssc: mapEducation(education.ssc, 'SSC'),
+                intermediate: mapEducation(education.inter, 'INTERMEDIATE'),
+                graduation: mapEducation(education.grad, 'GRADUATION'),
+                postGraduations: education.postGrad.map(pg => mapEducation(pg, 'POST_GRADUATION')),
                 otherCertificates: education.otherCerts.map(cert => ({
                     instituteName: cert.institute,
                     certificateNumber: cert.certNumber,
-                    certificatePath: getFileInfo(cert.certificate, "Other Cert")
+                    certificateFilePath: getFileInfo(cert.certificate, "Other Cert")
                 })),
                 internships: experience.internships.map(int => ({
                     companyName: int.company,
@@ -589,35 +612,28 @@ const EmployeeOnboardingForm = () => {
                 })),
                 workExperiences: experience.workHistory.map(work => ({
                     companyName: work.company,
-                    yearsOfExp: work.years,
+                    yearsOfExperience: work.years,
                     offerLetterPath: getFileInfo(work.offerLetter, "Work Offer"),
                     relievingLetterPath: getFileInfo(work.relievingLetter, "Work Relieving"),
                     payslipsPath: getFileInfo(work.payslips, "Work Payslip"),
                     experienceCertificatePath: getFileInfo(work.experienceCert, "Work Exp Cert")
                 })),
                 panProof: {
-                    proofType: 'PAN',
-                    documentNumber: documents.panNumber,
-                    filePath: getFileInfo(documents.panCard, "PAN Card")
+                    panNumber: documents.panNumber
                 },
                 aadharProof: {
-                    proofType: 'AADHAR',
-                    documentNumber: documents.aadharNumber,
-                    filePath: getFileInfo(documents.aadharCard, "Aadhar Card")
+                    aadhaarNumber: documents.aadharNumber
                 },
-                photoProof: {
-                    proofType: 'PHOTO',
-                    filePath: getFileInfo(documents.passportPhoto, "Passport Photo")
-                },
+                photoProof: {},
                 passportProof: {
-                    proofType: 'PASSPORT',
-                    filePath: getFileInfo(documents.passportDoc, "Passport Doc")
+                    passportNumber: documents.passportNumber
                 },
                 voterProof: {
-                    proofType: 'VOTER',
-                    filePath: getFileInfo(documents.voterId, "Voter ID")
+                    voterNumber: documents.voterNumber
                 }
             };
+
+            console.log("Submit Payload:", JSON.stringify(jsonData, null, 2));
 
             // 2. Build FormData - Send JSON
             const tokenFromUrl = new URLSearchParams(window.location.search).get('token');
@@ -630,7 +646,7 @@ const EmployeeOnboardingForm = () => {
             console.log('Method: POST');
 
             const formData = new FormData();
-            // 1. Add the entire DTO as a JSON Blob under key "data"
+            // 1. Add the entire DTO as a JSON Blob under key "data" (matching backend requirement)
             formData.append('data', new Blob([JSON.stringify(jsonData)], {
                 type: 'application/json'
             }));
@@ -649,48 +665,62 @@ const EmployeeOnboardingForm = () => {
                 }
             };
 
-            appendFile('passbook', bank.docImage);
+            if (education.otherCerts.length > 0) {
+                education.otherCerts.forEach((cert, index) => {
+                    // User specified 'other_certificate_file' and 'other_marks_memo_file' without index
+                    appendFile(`other_certificate_file`, cert.certificate);
+                    appendFile(`other_marks_memo_file`, cert.marksMemo);
+                });
+            }
+
+            appendFile('bank', bank.docImage);
             appendFile('ssc_certificate', education.ssc.certificate);
-            appendFile('ssc_marks', education.ssc.marksMemo);
+            appendFile('ssc_marks_memo', education.ssc.marksMemo);
             appendFile('inter_certificate', education.inter.certificate);
-            appendFile('inter_marks', education.inter.marksMemo);
-            appendFile('grad_certificate', education.grad.certificate);
-            appendFile('grad_marks', education.grad.marksMemo);
+            appendFile('inter_marks_memo', education.inter.marksMemo);
+            
+            // User specified grad_certificate_0, grad_certificate_1 etc. 
+            // Our form has one graduation, but we support indexing just in case.
+            appendFile('grad_certificate_0', education.grad.certificate);
+            appendFile('grad_marks_memo_0', education.grad.marksMemo);
 
             education.postGrad.forEach((pg, i) => {
-                appendFile(`post_grad_file_${i}`, pg.certificate);
-                appendFile(`post_grad_marks_file_${i}`, pg.marksMemo);
+                // User specified 'post_graduation_certificate_file' without index
+                appendFile(`post_graduation_certificate_file`, pg.certificate);
+                appendFile(`post_graduation_marks_memo_file`, pg.marksMemo);
             });
 
             experience.internships.forEach((int, i) => {
-                appendFile(`internship_offer_file_${i}`, int.offerLetter);
-                appendFile(`internship_cert_file_${i}`, int.relievingLetter);
+                appendFile(`internship_offer_letter_${i}`, int.offerLetter);
+                appendFile(`internship_experience_certificate_${i}`, int.relievingLetter);
             });
 
             experience.workHistory.forEach((work, i) => {
-                appendFile(`work_offer_file_${i}`, work.offerLetter);
-                appendFile(`work_relieving_file_${i}`, work.relievingLetter);
-                appendFile(`work_payslips_file_${i}`, work.payslips);
-                appendFile(`work_exp_cert_file_${i}`, work.experienceCert);
+                appendFile(`experience_offer_letter_${i}`, work.offerLetter);
+                appendFile(`experience_relieving_letter_${i}`, work.relievingLetter);
+                appendFile(`experience_payslips_${i}`, work.payslips);
+                appendFile(`experience_certificate_${i}`, work.experienceCert);
             });
 
             appendFile('pan', documents.panCard);
-            appendFile('aadhar', documents.aadharCard);
+            appendFile('aadhaar', documents.aadharCard);
             appendFile('photo', documents.passportPhoto);
             appendFile('passport', documents.passportDoc);
             appendFile('voter', documents.voterId);
 
-            console.log("📤 Submitting Multipart data to backend...");
+            // Detailed logging for debugging
             const response = await apiService.submitOnboarding(formData, token);
-            console.log("✅ Onboarding Submit Success:", response);
-
             console.log("✅ Onboarding Submit Success:", response);
 
             alert('Registration successful! Our team will review your application.');
             setStep(1);
         } catch (error) {
-            console.error("❌ Submission Failed:", error);
-            alert(`Error: ${error.message}`);
+            console.error("❌ Submission Failed:", error.message);
+            if (error instanceof TypeError) {
+                alert("Server unreachable or blocked by browser.");
+            } else {
+                alert("Submission failed: " + error.message);
+            }
         }
     };
 
@@ -814,7 +844,7 @@ const EmployeeOnboardingForm = () => {
                                     <div key={i} className="dynamic-card">
                                         <button type="button" className="btn-del" onClick={() => removePostGrad(i)}><Trash2 size={16} /></button>
                                         <div className="row">
-                                            <Input label="College Name" val={pg.college} fn={(e) => updatePostGrad(i, 'college', e.target.value)} />
+                                            <Input label="College Name" val={pg.institutionName} fn={(e) => updatePostGrad(i, 'institutionName', e.target.value)} />
                                             <Input label="Year" val={pg.year} fn={(e) => updatePostGrad(i, 'year', e.target.value)} />
                                         </div>
                                         <div className="row">
@@ -964,7 +994,18 @@ const EmployeeOnboardingForm = () => {
                             </div>
                             <div className="row">
                                 <Input label="Account Number" name="accNumber" val={bank.accNumber} fn={handleBankChange} req error={errors.accNumber} rejected={isFieldRejected('accountNumber')} />
-                                <Input label="IFSC Code" name="ifsc" val={bank.ifsc} fn={handleBankChange} req error={errors.ifsc} rejected={isFieldRejected('ifscCode')} />
+                                <Input
+                                    label="IFSC Code"
+                                    name="ifsc"
+                                    val={bank.ifsc}
+                                    fn={handleBankChange}
+                                    req
+                                    error={errors.ifsc}
+                                    rejected={isFieldRejected('ifscCode')}
+                                    placeholder="SBIN0001234"
+                                    pattern="[A-Za-z]{4}0[0-9]{6}"
+                                    title="Enter valid IFSC like SBIN0001234"
+                                />
                             </div>
 
                             <div className="row">
@@ -981,9 +1022,9 @@ const EmployeeOnboardingForm = () => {
                                         onChange={handleBankChange}
                                         className={`form-input ${isFieldRejected('passbookPath') ? 'error' : ''}`}
                                     >
-                                        <option value="Passbook">Passbook</option>
-                                        <option value="Statement">Bank Statement</option>
-                                        <option value="Cheque">Cancelled Cheque</option>
+                                        <option value="PASSBOOK">Passbook</option>
+                                        <option value="STATEMENT">Bank Statement</option>
+                                        <option value="CHEQUE">Cancelled Cheque</option>
                                     </select>
                                     {isFieldRejected('passbookPath') && <span className="error-msg">This document was rejected.</span>}
                                 </div>
@@ -1408,7 +1449,7 @@ const EmployeeOnboardingForm = () => {
     );
 };
 
-const Input = ({ label, name, val, fn, req, type = "text", error, rejected }) => (
+const Input = ({ label, name, val, fn, req, type = "text", error, rejected, ...rest }) => (
     <div className={`input-group ${error || rejected ? 'error' : ''}`}>
         <label>
             {label} {req && <span style={{ color: 'red' }}>*</span>}
@@ -1421,6 +1462,7 @@ const Input = ({ label, name, val, fn, req, type = "text", error, rejected }) =>
             onChange={fn}
             required={req}
             className={`form-input ${error || rejected ? 'error' : ''}`}
+            {...rest}
         />
         {error && <span className="error-msg">{error}</span>}
         {rejected && <span className="error-msg">This field was rejected. Please update it.</span>}
@@ -1461,10 +1503,10 @@ const EducationBlock = ({ title, data, onChange, hasMarskMemo, schoolLabel = "Sc
             <div className="row">
                 <Input
                     label={schoolLabel}
-                    val={data.school || data.college}
-                    fn={(e) => onChange('college', e.target.value)}
+                    val={data.institutionName}
+                    fn={(e) => onChange('institutionName', e.target.value)}
                     req={req}
-                    error={errors[`${levelKey}_college`]}
+                    error={errors[`${levelKey}_institutionName`]}
                 />
                 <Input
                     label="Hall Ticket No."

@@ -1,7 +1,28 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Menu, User } from 'lucide-react';
 
 const Header = ({ toggleSidebar, toggleProfile }) => {
+  const [userName, setUserName] = useState('Admin');
+  const [userRole, setUserRole] = useState('Super Admin');
+
+  useEffect(() => {
+    // Try to parse the user object from localStorage
+    try {
+      const storedUserStr = localStorage.getItem('user');
+      if (storedUserStr) {
+        const storedUser = JSON.parse(storedUserStr);
+        if (storedUser.fullName || storedUser.name) {
+          setUserName(storedUser.fullName || storedUser.name);
+        }
+        if (storedUser.role) {
+          setUserRole(storedUser.role);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not parse user from localStorage", e);
+    }
+  }, []);
+
   return (
     <header className="header">
       <div className="header-left">
@@ -15,8 +36,8 @@ const Header = ({ toggleSidebar, toggleProfile }) => {
 
         <div className="user-profile" onClick={toggleProfile} style={{ cursor: 'pointer' }}>
           <div className="user-info">
-            <span className="user-name">John Doe</span>
-            <span className="user-role">Super Admin</span>
+            <span className="user-name">{userName}</span>
+            <span className="user-role">{userRole}</span>
           </div>
           <div className="avatar">
             <User size={20} />

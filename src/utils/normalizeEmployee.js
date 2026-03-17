@@ -13,8 +13,17 @@ export const formatDate = (date) => {
     if (!date) return '-';
     // Handle Java LocalDate array [year, month, day]
     if (Array.isArray(date)) {
+        if (date.length === 0) return '-';
+        if (date.length === 1) return String(date[0]);
         const [year, month, day] = date;
-        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return `${year}-${String(month || 1).padStart(2, '0')}-${String(day || 1).padStart(2, '0')}`;
+    }
+    // Handle Java LocalDate object {year, month, day}
+    if (date && typeof date === 'object') {
+        const y = date.year || date.Year;
+        const m = date.monthValue || date.month || date.Month || 1;
+        const d = date.dayOfMonth || date.day || date.Day || 1;
+        if (y) return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     }
     // Handle string formatting - be smart about timestamps vs calendar dates
     if (typeof date === 'string') {
@@ -178,7 +187,7 @@ export const scavengeValue = (obj, patterns, seen = new Set(), excludePatterns =
  */
 export const scavengePath = (obj, patterns) => {
     // 1. First try specifically for keys that look like paths/files (aggressive lookup)
-    const filePatterns = [...patterns, 'Path', 'File', 'Doc', 'Url', 'Certificate', 'Image', 'Photo', 'Memo'];
+    const filePatterns = [...patterns, 'Path', 'File', 'Url', 'CertificatePath', 'FilePath'];
     const val = scavengeValue(obj, filePatterns);
 
     const isPath = (v) => typeof v === 'string' && (v.includes('/') || v.includes('\\') || (v.includes('.') && v.length > 5) || v.length > 20);
@@ -201,17 +210,21 @@ const normalizeEdu = (item, source = {}, prefix = '') => {
     if (!item || item === '-') {
         if (prefix && source && typeof source === 'object') {
             const p = prefix.toLowerCase();
-            const school = scavengeValue(source, [p + 'School', p + 'Institution', p + 'College', p + 'Name']);
-            const yr = scavengeValue(source, [p + 'Year', p + 'Passout', p + 'Date']);
-            const score = scavengeValue(source, [p + 'Percentage', p + 'Cgpa', p + 'Marks']);
+            const school = scavengeValue(source, [p + 'School', p + 'Institution', p + 'College', p + 'Name', p + '_institution', p + '_college', p + '_name']);
+            const yr = scavengeValue(source, [p + 'Year', p + 'Passout', p + 'Date', p + '_year', p + '_passout', p + '_date']);
+            const score = scavengeValue(source, [p + 'Percentage', p + 'Cgpa', p + 'Marks', p + '_percentage', p + '_cgpa', p + '_marks']);
             if (school || yr || score) {
                 item = {
                     institutionName: school,
                     passoutYear: yr,
                     percentageCgpa: score,
-                    hallTicketNo: scavengeValue(source, [p + 'HallTicket', p + 'RollNo', p + 'Id']),
-                    certificatePath: scavengePath(source, [p + 'Certificate', p + 'File', p + 'Doc']),
-                    marksMemoPath: scavengePath(source, [p + 'Marks', p + 'Memo', p + 'Transcript'])
+                    percentage: score,
+                    hallTicketNo: scavengeValue(source, [p + 'HallTicket', p + 'RollNo', p + 'Id', p + '_hall_ticket', p + '_roll_no']),
+                    hallTicketNumber: scavengeValue(source, [p + 'HallTicket', p + 'RollNo', p + 'Id', p + '_hall_ticket', p + '_roll_no']),
+                    certificatePath: scavengePath(source, [p + 'Certificate', p + 'File', p + 'Doc', p + '_certificate', p + '_file', p + '_doc', 'post_graduation_certificate_file', 'other_certificate_file']),
+                    certificateFilePath: scavengePath(source, [p + 'Certificate', p + 'File', p + 'Doc', p + '_certificate', p + '_file', p + '_doc', 'post_graduation_certificate_file', 'other_certificate_file']),
+                    marksMemoPath: scavengePath(source, [p + 'Marks', p + 'Memo', p + 'Transcript', p + '_marks_memo', p + '_memo', p + '_transcript', 'post_graduation_marks_memo_file', 'other_marks_memo_file']),
+                    marksMemoFilePath: scavengePath(source, [p + 'Marks', p + 'Memo', p + 'Transcript', p + '_marks_memo', p + '_memo', p + '_transcript', 'post_graduation_marks_memo_file', 'other_marks_memo_file'])
                 };
             }
         }
@@ -223,18 +236,22 @@ const normalizeEdu = (item, source = {}, prefix = '') => {
     }
     if (!parsed || typeof parsed !== 'object' || parsed === '-') return null;
 
-    const rawInst = parsed.institutionName || scavengeValue(parsed, ['institution', 'college', 'school', 'university', 'board']);
-    const rawYear = parsed.passoutYear || scavengeValue(parsed, ['year', 'passout', 'date', 'passing', 'completion']);
-    const rawScore = parsed.percentageCgpa || scavengeValue(parsed, ['percentage', 'cgpa', 'marks', 'score', 'grade']);
+    const rawInst = parsed.institutionName || parsed.collegeName || parsed.universityName || scavengeValue(parsed, ['institution', 'college', 'school', 'university', 'board']);
+    const rawYear = parsed.passoutYear || parsed.year || scavengeValue(parsed, ['year', 'passout', 'date', 'passing', 'completion']);
+    const rawScore = parsed.percentageCgpa || parsed.percentage || scavengeValue(parsed, ['percentage', 'cgpa', 'marks', 'score', 'grade']);
 
     const result = {
         ...parsed,
         institutionName: rawInst || '-',
         passoutYear: rawYear || '-',
         percentageCgpa: rawScore || '-',
-        hallTicketNo: parsed.hallTicketNo || scavengeValue(parsed, ['hallTicket', 'htNumber', 'rollNo']),
-        certificatePath: parsed.certificatePath || scavengePath(parsed, ['certificate', 'certPath', 'doc', 'file']),
-        marksMemoPath: parsed.marksMemoPath || scavengePath(parsed, ['marksMemo', 'marks', 'memo', 'transcript'])
+        percentage: rawScore || '-',
+        hallTicketNo: parsed.hallTicketNo || parsed.hallTicketNumber || scavengeValue(parsed, ['hallTicket', 'htNumber', 'rollNo']),
+        hallTicketNumber: parsed.hallTicketNumber || parsed.hallTicketNo || scavengeValue(parsed, ['hallTicket', 'htNumber', 'rollNo']),
+        certificatePath: parsed.certificatePath || parsed.certificateFilePath || scavengePath(parsed, ['certificate', 'certPath', 'doc', 'file']),
+        certificateFilePath: parsed.certificateFilePath || parsed.certificatePath || scavengePath(parsed, ['certificate', 'certPath', 'doc', 'file']),
+        marksMemoPath: parsed.marksMemoPath || parsed.marksMemoFilePath || scavengePath(parsed, ['marksMemo', 'marks', 'memo', 'transcript']),
+        marksMemoFilePath: parsed.marksMemoFilePath || parsed.marksMemoPath || scavengePath(parsed, ['marksMemo', 'marks', 'memo', 'transcript'])
     };
 
     if (result.institutionName === '-' && result.passoutYear === '-' && result.percentageCgpa === '-') return null;
@@ -259,23 +276,23 @@ const buildIdentityProofs = (source) => {
     };
 
     const pan = source.panProof || findKeyVal(['panProof', 'pan_card', 'pan_file']);
-    if (pan) proofs.push({ type: 'PAN', proofType: 'PAN', entityType: 'IDENTITY_PROOF', id: pan.id, ...(typeof pan === 'object' ? pan : { filePath: pan }) });
+    if (pan) proofs.push({ type: 'PAN', proofType: 'PAN', entityType: 'IDENTITY_PROOF', id: pan.id, ...(typeof pan === 'object' ? { filePath: pan.panFile || pan.path || pan.filePath, ...pan } : { filePath: pan }) });
     else if (source.panPath) proofs.push({ type: 'PAN', proofType: 'PAN', entityType: 'IDENTITY_PROOF', id: null, filePath: source.panPath });
 
-    const aadhar = source.aadharProof || findKeyVal(['aadharProof', 'aadhar_card', 'aadhar_file']);
-    if (aadhar) proofs.push({ type: 'AADHAR', proofType: 'AADHAR', entityType: 'IDENTITY_PROOF', id: aadhar.id, ...(typeof aadhar === 'object' ? aadhar : { filePath: aadhar }) });
+    const aadhar = source.aadharProof || source.aadhaarProof || findKeyVal(['aadharProof', 'aadhaarProof', 'aadhar_card', 'aadhar_file']);
+    if (aadhar) proofs.push({ type: 'AADHAR', proofType: 'AADHAR', entityType: 'IDENTITY_PROOF', id: aadhar.id, ...(typeof aadhar === 'object' ? { filePath: aadhar.aadhaarFile || aadhar.aadharFile || aadhar.path || aadhar.filePath, ...aadhar } : { filePath: aadhar }) });
     else if (source.aadharPath) proofs.push({ type: 'AADHAR', proofType: 'AADHAR', entityType: 'IDENTITY_PROOF', id: null, filePath: source.aadharPath });
 
     const photo = source.photoProof || findKeyVal(['photoProof', 'photo', 'passportPhoto']);
-    if (photo) proofs.push({ type: 'PHOTO', proofType: 'PHOTO', entityType: 'IDENTITY_PROOF', id: photo.id, ...(typeof photo === 'object' ? photo : { filePath: photo }) });
+    if (photo) proofs.push({ type: 'PHOTO', proofType: 'PHOTO', entityType: 'IDENTITY_PROOF', id: photo.id, ...(typeof photo === 'object' ? { filePath: photo.photoFile || photo.path || photo.filePath, ...photo } : { filePath: photo }) });
     else if (source.photoPath) proofs.push({ type: 'PHOTO', proofType: 'PHOTO', entityType: 'IDENTITY_PROOF', id: null, filePath: source.photoPath });
 
     const passport = source.passportProof || findKeyVal(['passportProof', 'passportDoc', 'passport_file', 'passport_document']);
-    if (passport) proofs.push({ type: 'PASSPORT', proofType: 'PASSPORT', entityType: 'IDENTITY_PROOF', id: passport.id, ...(typeof passport === 'object' ? passport : { filePath: passport }) });
+    if (passport) proofs.push({ type: 'PASSPORT', proofType: 'PASSPORT', entityType: 'IDENTITY_PROOF', id: passport.id, ...(typeof passport === 'object' ? { filePath: passport.passportFile || passport.path || passport.filePath, ...passport } : { filePath: passport }) });
     else if (source.passportPath) proofs.push({ type: 'PASSPORT', proofType: 'PASSPORT', entityType: 'IDENTITY_PROOF', id: null, filePath: source.passportPath });
 
     const voter = source.voterProof || findKeyVal(['voterProof', 'voterId', 'voter_file', 'voter_card']);
-    if (voter) proofs.push({ type: 'VOTER', proofType: 'VOTER', entityType: 'IDENTITY_PROOF', id: voter.id, ...(typeof voter === 'object' ? voter : { filePath: voter }) });
+    if (voter) proofs.push({ type: 'VOTER', proofType: 'VOTER', entityType: 'IDENTITY_PROOF', id: voter.id, ...(typeof voter === 'object' ? { filePath: voter.voterFile || voter.path || voter.filePath, ...voter } : { filePath: voter }) });
     else if (source.voterPath) proofs.push({ type: 'VOTER', proofType: 'VOTER', entityType: 'IDENTITY_PROOF', id: null, filePath: source.voterPath });
 
     return proofs;
@@ -286,12 +303,44 @@ const buildIdentityProofs = (source) => {
  */
 export const normalizeEmployee = (emp, departments = [], roles = [], entities = []) => {
     if (!emp) return null;
+
+    // AVOID ARRAY NESTING: If backend returns [{...}] instead of {...}, take the first one
+    if (Array.isArray(emp)) {
+        console.warn("⚠️ normalizeEmployee received an array instead of an object. Taking the first element.", emp);
+        emp = emp[0];
+    }
+    
+    if (!emp) return null;
+
     console.log("🔍 [DEBUG] normalizeEmployee Input Keys:", Object.keys(emp));
 
     // --- PRE-PARSING ---
     let expandedEmp = { ...emp };
-    Object.keys(emp).forEach(key => {
-        const val = emp[key];
+
+    // MERGE ONBOARDING FORM DATA
+    // When an employee fills onboarding, their main record might be empty but 
+    // the nested 'onboardingForm' object holds all the submissions.
+    const mergeForm = (form) => {
+        if (!form) return;
+        let parsed = form;
+        if (typeof form === 'string' && (form.trim().startsWith('{') || form.trim().startsWith('['))) {
+            try { parsed = JSON.parse(form); } catch (e) { }
+        }
+        if (!parsed || typeof parsed !== 'object') return;
+        
+        Object.keys(parsed).forEach(k => {
+            const val = parsed[k];
+            // Only overwrite if the value exists and the root property is empty/null/'-'
+            if (val && val !== '-' && (!expandedEmp[k] || expandedEmp[k] === '-' || expandedEmp[k] === '')) {
+                expandedEmp[k] = val;
+            }
+        });
+    };
+    mergeForm(emp.onboardingForm);
+    mergeForm(emp.onboardingDetails);
+
+    Object.keys(expandedEmp).forEach(key => {
+        const val = expandedEmp[key];
         if (typeof val === 'string' && val.length > 2 && (val.trim().startsWith('{') || val.trim().startsWith('['))) {
             try {
                 const parsed = JSON.parse(val);
@@ -357,11 +406,31 @@ export const normalizeEmployee = (emp, departments = [], roles = [], entities = 
     const normalized = {
         ...expandedEmp,
         identityProofs,
-        name: expandedEmp.fullName || expandedEmp.name || findByPattern(expandedEmp, ['name']) || '',
-        phone: expandedEmp.phoneNumber || expandedEmp.phone || expandedEmp.mobileNumber || '',
-        employeeId: expandedEmp.id || expandedEmp.employeeId || '',
-        empCode: expandedEmp.empId || expandedEmp.emp_id || expandedEmp.empCode || expandedEmp.employee_code || '-',
-        onboardingDate: formatDate(expandedEmp.dateOfOnboarding || expandedEmp.onboardingDate || findByPattern(expandedEmp, ['onboard'])),
+        name: expandedEmp.fullName || expandedEmp.name || findByPattern(expandedEmp, ['name']) || 'Unknown Employee',
+        phone: expandedEmp.phoneNumber || expandedEmp.phone || expandedEmp.mobileNumber || '-',
+        employeeId: (expandedEmp.employeeId || expandedEmp.empId || expandedEmp.id || '').toString().trim(),
+        empCode: expandedEmp.empId || expandedEmp.emp_id || expandedEmp.empNo || expandedEmp.empCode || '-',
+        onboardingDate: formatDate(
+            expandedEmp.dateOfOnboarding || 
+            expandedEmp.onboardingDate || 
+            expandedEmp.joiningDate || 
+            expandedEmp.dateOfJoining ||
+            expandedEmp.onboardDate ||
+            expandedEmp.onboarding_date ||
+            expandedEmp.joining_date ||
+            expandedEmp.hiring_date ||
+            expandedEmp.doj ||
+            expandedEmp.date_of_onboard ||
+            expandedEmp.registration_date ||
+            (function() {
+                // Specific search to avoid picking up the whole "onboardingForm" object
+                const patterns = ['onboard_date', 'dateOfOnboarding', 'onboardingDate', 'date_of_onboarding', 'joiningDate', 'dateOfJoining', 'hiringDate', 'doj', 'registration_date'];
+                const val = findByPattern(expandedEmp, patterns);
+                // Ensure we don't return the whole onboardingForm or identityProofs object
+                if (val && typeof val === 'object' && !Array.isArray(val) && !val.year) return null; 
+                return val;
+            })()
+        ),
         dateOfInterview: formatDate(expandedEmp.dateOfInterview || expandedEmp.interviewDate || findByPattern(expandedEmp, ['interview'])),
         dateOfBirth: formatDate(expandedEmp.dateOfBirth || expandedEmp.dob || findByPattern(expandedEmp, ['dob', 'birth'])),
         deptName: deptDisplay,
@@ -370,11 +439,14 @@ export const normalizeEmployee = (emp, departments = [], roles = [], entities = 
         createdAt: formatDateTime(expandedEmp.createdAt || expandedEmp.createdDate || findByPattern(expandedEmp, ['createdAt', 'createdDate'])),
 
         bloodGroup: expandedEmp.bloodGroup || findByPattern(expandedEmp, ['bloodGroup', 'blood']) || '-',
-        bankName: expandedEmp.bankName || findByPattern(expandedEmp, ['bankName', 'bank']) || '',
-        branchName: expandedEmp.branchName || expandedEmp.branch || findByPattern(expandedEmp, ['branchName', 'branch']) || '',
-        accountNumber: expandedEmp.accountNumber || findByPattern(expandedEmp, ['accountNumber', 'account']) || '',
-        ifscCode: expandedEmp.ifscCode || findByPattern(expandedEmp, ['ifscCode', 'ifsc']) || '',
-        upiId: expandedEmp.upiId || findByPattern(expandedEmp, ['upiId', 'upi']) || '',
+        // Bank details: backend now nests these under `bankDetails` object; fall back to top-level for legacy
+        bankName: (expandedEmp.bankDetails?.bankName) || expandedEmp.bankName || findByPattern(expandedEmp, ['bankName', 'bank']) || '',
+        branchName: (expandedEmp.bankDetails?.branchName) || expandedEmp.branchName || expandedEmp.branch || findByPattern(expandedEmp, ['branchName', 'branch']) || '',
+        accountNumber: (expandedEmp.bankDetails?.accountNumber) || expandedEmp.accountNumber || findByPattern(expandedEmp, ['accountNumber', 'account']) || '',
+        ifscCode: (expandedEmp.bankDetails?.ifscCode) || expandedEmp.ifscCode || findByPattern(expandedEmp, ['ifscCode', 'ifsc']) || '',
+        upiId: (expandedEmp.bankDetails?.upiId) || expandedEmp.upiId || findByPattern(expandedEmp, ['upiId', 'upi']) || '',
+        bankDocumentType: (expandedEmp.bankDetails?.documentType) || expandedEmp.documentType || expandedEmp.bankDocumentType || findByPattern(expandedEmp, ['docType', 'documentType', 'bankDocumentType']) || 'PASSBOOK',
+        documentFilePath: (expandedEmp.bankDetails?.documentFilePath) || expandedEmp.documentFilePath || expandedEmp.passbookPath || scavengePath(expandedEmp, ['passbook', 'bankPassbook', 'documentFilePath']),
 
         ssc: normalizeEdu(
             expandedEmp.ssc ||
@@ -395,11 +467,15 @@ export const normalizeEmployee = (emp, departments = [], roles = [], entities = 
         ),
         graduation: normalizeEdu(
             expandedEmp.graduation ||
-            scavengeValue(expandedEmp, ['graduation', 'degree', 'ug']),
+            scavengeValue(expandedEmp, ['graduation', 'degree', 'ug', 'undergrad']),
             expandedEmp,
             'grad'
         ) || normalizeEdu(
-            sortedEducations.find(e => (e.institutionName || '').toLowerCase().includes('university') || (e.educationType || '').toLowerCase().includes('grad') || (e.passoutYear && sscYearVal && parseInt(e.passoutYear) > sscYearVal + 3)) ||
+            sortedEducations.find(e => {
+                const type = (e.educationType || '').toLowerCase();
+                const inst = (e.institutionName || '').toLowerCase();
+                return type.includes('grad') || type === 'ug' || inst.includes('university') || inst.includes('degree') || (e.passoutYear && sscYearVal && parseInt(e.passoutYear) > sscYearVal + 3);
+            }) ||
             (sortedEducations.length > 2 ? sortedEducations[2] : null)
         ),
         postGraduations: (function () {
@@ -449,16 +525,18 @@ export const normalizeEmployee = (emp, departments = [], roles = [], entities = 
         presentAddress: expandedEmp.presentAddress || scavengeValue(expandedEmp, ['presentAddress', 'presAddress']),
         permanentAddress: expandedEmp.permanentAddress || scavengeValue(expandedEmp, ['permanentAddress', 'permAddress']),
 
-        passbookPath: expandedEmp.passbookPath || scavengePath(expandedEmp, ['passbook', 'bankPassbook']),
+        // Hybrid support for legacy and new bank document paths
+        passbookPath: expandedEmp.documentFilePath || expandedEmp.passbookPath || scavengePath(expandedEmp, ['passbook', 'bankPassbook', 'documentFilePath']),
         panPath: expandedEmp.panPath || findProof(expandedEmp, 'PAN')?.filePath || scavengePath(expandedEmp, ['pan_card', 'pan_file', 'panProof']),
         aadharPath: expandedEmp.aadharPath || findProof(expandedEmp, 'AADHAR')?.filePath || scavengePath(expandedEmp, ['aadhar_card', 'aadhar_file', 'aadharProof']),
-        photoPath: expandedEmp.photoPath || findProof(expandedEmp, 'PHOTO')?.filePath || scavengePath(expandedEmp, ['photo', 'passportPhoto', 'photoProof', 'Photo', 'Image', 'PassportPhoto', 'ProfilePhoto', 'ProfilePic', 'Avatar', 'Face']),
+        photoPath: expandedEmp.photoPath || expandedEmp.passportPhotoPath || findProof(expandedEmp, 'PHOTO')?.filePath || findProof(expandedEmp, 'PASSPORT')?.filePath || scavengePath(expandedEmp, ['photo', 'passportPhoto', 'profilePhoto', 'profilePic', 'avatar', 'passport_photo', 'profile_photo', 'passport_file', 'Photo', 'Image', 'face']),
         voterPath: expandedEmp.voterPath || findProof(expandedEmp, 'VOTER')?.filePath || scavengePath(expandedEmp, ['voter', 'voterId', 'voter_file', 'voterProof', 'voter_proof']),
         passportPath: expandedEmp.passportPath || findProof(expandedEmp, 'PASSPORT')?.filePath || scavengePath(expandedEmp, ['passport', 'passportDoc', 'passport_document', 'passport_file', 'passportProof', 'passport_proof']),
 
         panNumber: (() => {
             const looksLikeFile = (v) => typeof v === 'string' && /\.(png|jpg|jpeg|gif|webp|pdf|avif|jfif|bmp|svg|tiff|avif)$/i.test(v);
-            const raw = expandedEmp.panNumber || findProof(expandedEmp, 'PAN')?.documentNumber || scavengeValue(expandedEmp, ['panNumber', 'panId', 'panNo', 'pan_number', 'pan']);
+            const proof = findProof(expandedEmp, 'PAN');
+            const raw = expandedEmp.panNumber || proof?.panNumber || proof?.documentNumber || scavengeValue(expandedEmp, ['panNumber', 'panId', 'panNo', 'pan_number', 'pan']);
             if (!raw || typeof raw !== 'string') return raw || null;
             const s = raw.trim();
             if (looksLikeFile(s) || s.length > 25 || s.includes('/') || s.includes('\\')) return null;
@@ -466,18 +544,28 @@ export const normalizeEmployee = (emp, departments = [], roles = [], entities = 
         })(),
         aadharNumber: (() => {
             const looksLikeFile = (v) => typeof v === 'string' && /\.(png|jpg|jpeg|gif|webp|pdf|avif|jfif|bmp|svg|tiff|avif)$/i.test(v);
-            const raw = expandedEmp.aadharNumber || findProof(expandedEmp, 'AADHAR')?.documentNumber || scavengeValue(expandedEmp, ['aadharNumber', 'aadharId', 'aadharNo', 'aadhar_number', 'aadhar']);
+            const proof = findProof(expandedEmp, 'AADHAR') || findProof(expandedEmp, 'AADHAAR');
+            const raw = expandedEmp.aadharNumber || expandedEmp.aadhaarNumber || proof?.aadhaarNumber || proof?.aadharNumber || proof?.documentNumber || scavengeValue(expandedEmp, ['aadhaarNumber', 'aadharNumber', 'aadharId', 'aadharNo', 'aadhar_number', 'aadhar', 'aadhaar']);
             if (!raw || typeof raw !== 'string') return raw || null;
             const s = raw.trim();
             if (looksLikeFile(s) || s.length > 25 || s.includes('/') || s.includes('\\')) return null;
             return s;
         })(),
 
-        educationCount: (expandedEmp.ssc ? 1 : 0) + (expandedEmp.intermediate ? 1 : 0) + (expandedEmp.graduation ? 1 : 0) + (expandedEmp.postGraduations?.length || 0) + (expandedEmp.otherCertificates?.length || 0),
-        internshipCount: (expandedEmp.internships || []).length,
-        workExperienceCount: (expandedEmp.workExperiences || []).length,
+        educationCount: 0, // placeholder, calculated below
+        internshipCount: 0, // placeholder
+        workExperienceCount: 0, // placeholder
         identityProofCount: identityProofs.length
     };
+
+    // Recalculate counts based on normalized data
+    normalized.educationCount = (normalized.ssc ? 1 : 0) + 
+                             (normalized.intermediate ? 1 : 0) + 
+                             (normalized.graduation ? 1 : 0) + 
+                             (normalized.postGraduations?.length || 0) + 
+                             (normalized.otherCertificates?.length || 0);
+    normalized.internshipCount = (normalized.internships || []).length;
+    normalized.workExperienceCount = (normalized.workExperiences || []).length;
 
     console.log("✅ [DEBUG] normalizeEmployee Normalized Output:", {
         id: normalized.id,

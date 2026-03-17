@@ -1,6 +1,6 @@
 import React from 'react';
 import { X, User as UserIcon, Building2, Mail, Calendar, Phone, ShieldCheck, Tag, Briefcase, MapPin, CheckCircle2, XCircle, Eye, FileText } from 'lucide-react';
-import { normalizeEmployee } from '../../../utils/normalizeEmployee';
+import { normalizeEmployee, getFileUrl } from '../../../utils/normalizeEmployee';
 import { buildFileUrl } from '../../../utils/file';
 import { API_BASE_URL } from '../../../config/api';
 
@@ -10,6 +10,12 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
             console.log("[DEBUG] ViewEmployeeModal opened with raw employee:", employee);
             const normalized = normalizeEmployee(employee);
             console.log("[DEBUG] ViewEmployeeModal normalized emp:", normalized);
+            if (normalized.graduation) {
+                console.log("[DEBUG] Graduation Object:", normalized.graduation);
+                console.log("[DEBUG] Graduation Certificate:", normalized.graduation.certificatePath);
+            } else {
+                console.warn("[DEBUG] Graduation object MISSING after normalization");
+            }
             console.log("[DEBUG] PAN Number:", normalized.panNumber, "| Aadhar Number:", normalized.aadharNumber);
             console.log("[DEBUG] Identity Proofs Array:", normalized.identityProofs);
         }
@@ -64,13 +70,13 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
         }
     };
 
-    // Helper to find a specific proof in the identityProofs list (matches User's pattern)
     // hyper-robust: case-insensitive and substring match
     const getProof = (type) => {
         if (!emp?.identityProofs) return null;
         const target = type.toUpperCase();
         return emp.identityProofs.find(p => {
             const pt = ((p.proofType || p.type || '')).toUpperCase();
+            if (!pt) return false; // Prevent matching empty types (e.g. 'VOTER'.includes('') is true)
             return pt.includes(target) || target.includes(pt);
         });
     };
@@ -102,7 +108,7 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
         const isImage = /\.(jpg|jpeg|png|gif|webp|avif|jfif)$/i.test(lowerPath);
         const isPdf = lowerPath.endsWith(".pdf");
 
-        const fileUrl = getFileUrl(path);
+        const fileUrl = buildFileUrl(path);
 
         return (
             <div className="doc-card">
@@ -214,6 +220,7 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                         alt={emp.name}
                                         onError={(e) => {
                                             const target = e.target;
+                                            const photoErrState = target.dataset.photoErrState || '0';
                                             if (photoErrState === '0') {
                                                 const currentSrc = target.src;
                                                 const pathParts = currentSrc.split(/[/\\]/);
@@ -377,7 +384,7 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                         <label>Aadhar Number</label>
                                         <span className="font-mono text-primary">{emp.aadharNumber || '-'}</span>
                                         {emp.aadharPath && (
-                                            <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(emp.aadharPath), '_blank'); }}>
+                                            <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(buildFileUrl(emp.aadharPath), '_blank'); }}>
                                                 <Eye size={12} /> View Proof
                                             </a>
                                         )}
@@ -514,34 +521,39 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                         <div className="info-section">
                             <h3 className="section-title">Uploaded Documents</h3>
                             <div className="doc-viewer-grid">
-                                {renderDocCard("Bank Passbook", emp.bankProof || { filePath: emp.passbookPath, entityType: 'BANK_DETAILS', id: emp.id }, "passbook")}
+                                {renderDocCard(`${emp.bankDocumentType?.replace('_', ' ') || 'Bank Document'}`, { filePath: emp.documentFilePath || emp.passbookPath, entityType: 'BANK_DETAILS', id: emp.id }, "passbook")}
                                 {emp.ssc && renderDocCard("SSC Certificate", { ...emp.ssc, filePath: emp.ssc.certificatePath, entityType: 'EDUCATION', id: emp.ssc.id }, "ssc_certificate")}
-                                {emp.ssc && renderDocCard("SSC Marks Memo", { ...emp.ssc, filePath: emp.ssc.marksMemoPath, entityType: 'EDUCATION', id: emp.ssc.id }, "ssc_marks")}
+                                {/* {emp.ssc?.marksMemoPath && renderDocCard("SSC Marks Memo", { ...emp.ssc, filePath: emp.ssc.marksMemoPath, entityType: 'EDUCATION', id: emp.ssc.id }, "ssc_marks")} */}
                                 {emp.intermediate && renderDocCard("Inter Certificate", { ...emp.intermediate, filePath: emp.intermediate.certificatePath, entityType: 'EDUCATION', id: emp.intermediate.id }, "inter_certificate")}
-                                {emp.intermediate && renderDocCard("Inter Marks Memo", { ...emp.intermediate, filePath: emp.intermediate.marksMemoPath, entityType: 'EDUCATION', id: emp.intermediate.id }, "inter_marks")}
+                                {/* {emp.intermediate?.marksMemoPath && renderDocCard("Inter Marks Memo", { ...emp.intermediate, filePath: emp.intermediate.marksMemoPath, entityType: 'EDUCATION', id: emp.intermediate.id }, "inter_marks")} */}
                                 {emp.graduation && renderDocCard("Grad Certificate", { ...emp.graduation, filePath: emp.graduation.certificatePath, entityType: 'EDUCATION', id: emp.graduation.id }, "grad_certificate")}
-                                {emp.graduation && renderDocCard("Grad Marks Memo", { ...emp.graduation, filePath: emp.graduation.marksMemoPath, entityType: 'EDUCATION', id: emp.graduation.id }, "grad_marks")}
+                                {emp.graduation?.marksMemoPath && renderDocCard("Grad Marks Memo", { ...emp.graduation, filePath: emp.graduation.marksMemoPath, entityType: 'EDUCATION', id: emp.graduation.id }, "grad_marks")}
 
                                 {/* Identity Proofs — checks identityProofs array (both .type and .proofType) + named proof fields */}
                                 {(() => {
                                     const proofType = 'PAN';
                                     const panProof = getProof(proofType) || { filePath: emp.panPath };
+                                    if (!panProof.filePath) return null;
                                     return renderDocCard(`PAN Card (${emp.panNumber || '-'})`, panProof, "pan");
                                 })()}
                                 {(() => {
                                     const aadharProof = getProof('AADHAR') || { filePath: emp.aadharPath };
+                                    if (!aadharProof.filePath) return null;
                                     return renderDocCard(`Aadhar Card (${emp.aadharNumber || '-'})`, aadharProof, "aadhar");
                                 })()}
                                 {(() => {
                                     const photoProof = getProof('PHOTO') || { filePath: emp.photoPath };
+                                    if (!photoProof.filePath) return null;
                                     return renderDocCard("Passport Photo", photoProof, "photo");
                                 })()}
                                 {(() => {
                                     const passportProof = getProof('PASSPORT') || { filePath: emp.passportPath };
+                                    if (!passportProof.filePath) return null;
                                     return renderDocCard("Passport Document", passportProof, "passport");
                                 })()}
                                 {(() => {
                                     const voterProof = getProof('VOTER') || { filePath: emp.voterPath };
+                                    if (!voterProof.filePath) return null;
                                     return renderDocCard("Voter ID Card", voterProof, "voter");
                                 })()}
 
@@ -559,8 +571,8 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                 {/* Dynamic Lists */}
                                 {emp.postGraduations && emp.postGraduations.map((pg, i) => (
                                     <React.Fragment key={`pg-${i}`}>
-                                        {renderDocCard(`Post-Grad Cert (${i + 1})`, { ...pg, filePath: pg.certificatePath, entityType: 'POST_GRADUATION', id: pg.id || i }, `post_grad_file_${i}`)}
-                                        {renderDocCard(`Post-Grad Marks (${i + 1})`, { ...pg, filePath: pg.marksMemoPath, entityType: 'POST_GRADUATION', id: pg.id || i }, `post_grad_marks_file_${i}`)}
+                                        {pg.certificatePath && renderDocCard(`Post-Grad Cert (${i + 1})`, { ...pg, filePath: pg.certificatePath, entityType: 'POST_GRADUATION', id: pg.id || i }, `post_grad_file_${i}`)}
+                                        {pg.marksMemoPath && renderDocCard(`Post-Grad Marks (${i + 1})`, { ...pg, filePath: pg.marksMemoPath, entityType: 'POST_GRADUATION', id: pg.id || i }, `post_grad_marks_file_${i}`)}
                                     </React.Fragment>
                                 ))}
                                 {emp.otherCertificates && emp.otherCertificates.map((cert, i) => (
@@ -570,16 +582,16 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                 ))}
                                 {emp.internships && emp.internships.map((int, i) => (
                                     <React.Fragment key={`int-${i}`}>
-                                        {renderDocCard(`Intern Offer (${int.companyName})`, { ...int, filePath: int.offerLetterPath, entityType: 'INTERNSHIP', id: int.internshipId || int.id || i }, `internship_offer_file_${i}`)}
-                                        {renderDocCard(`Intern Cert (${int.companyName})`, { ...int, filePath: int.experienceCertificatePath, entityType: 'INTERNSHIP', id: int.internshipId || int.id || i }, `internship_cert_file_${i}`)}
+                                        {int.offerLetterPath && renderDocCard(`Intern Offer (${int.companyName})`, { ...int, filePath: int.offerLetterPath, entityType: 'INTERNSHIP', id: int.internshipId || int.id || i }, `internship_offer_file_${i}`)}
+                                        {int.experienceCertificatePath && renderDocCard(`Intern Cert (${int.companyName})`, { ...int, filePath: int.experienceCertificatePath, entityType: 'INTERNSHIP', id: int.internshipId || int.id || i }, `internship_cert_file_${i}`)}
                                     </React.Fragment>
                                 ))}
                                 {emp.workExperiences && emp.workExperiences.map((work, i) => (
                                     <React.Fragment key={`exp-${i}`}>
-                                        {renderDocCard(`Work Offer (${work.companyName})`, { ...work, filePath: work.offerLetterPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_offer_file_${i}`)}
-                                        {renderDocCard(`Relieving Letter (${work.companyName})`, { ...work, filePath: work.relievingLetterPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_relieving_file_${i}`)}
-                                        {renderDocCard(`Payslips (${work.companyName})`, { ...work, filePath: work.payslipsPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_payslips_file_${i}`)}
-                                        {renderDocCard(`Exp Cert (${work.companyName})`, { ...work, filePath: work.experienceCertificatePath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_exp_cert_file_${i}`)}
+                                        {work.offerLetterPath && renderDocCard(`Work Offer (${work.companyName})`, { ...work, filePath: work.offerLetterPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_offer_file_${i}`)}
+                                        {work.relievingLetterPath && renderDocCard(`Relieving Letter (${work.companyName})`, { ...work, filePath: work.relievingLetterPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_relieving_file_${i}`)}
+                                        {work.payslipsPath && renderDocCard(`Payslips (${work.companyName})`, { ...work, filePath: work.payslipsPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_payslips_file_${i}`)}
+                                        {work.experienceCertificatePath && renderDocCard(`Exp Cert (${work.companyName})`, { ...work, filePath: work.experienceCertificatePath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_exp_cert_file_${i}`)}
                                     </React.Fragment>
                                 ))}
                             </div>
@@ -602,11 +614,11 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                                         <Eye size={12} /> View Certificate
                                                     </a>
                                                 )}
-                                                {emp.ssc.marksMemoPath && (
+                                                {/* {emp.ssc.marksMemoPath && (
                                                     <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(emp.ssc.marksMemoPath), '_blank'); }}>
                                                         <Eye size={12} /> View Marks Memo
                                                     </a>
-                                                )}
+                                                )} */}
                                             </div>
                                         </div>
                                     )}
@@ -622,11 +634,11 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                                         <Eye size={12} /> View Certificate
                                                     </a>
                                                 )}
-                                                {emp.intermediate.marksMemoPath && (
+                                                {/* {emp.intermediate.marksMemoPath && (
                                                     <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(emp.intermediate.marksMemoPath), '_blank'); }}>
                                                         <Eye size={12} /> View Marks Memo
                                                     </a>
-                                                )}
+                                                )} */}
                                             </div>
                                         </div>
                                     )}
@@ -766,14 +778,22 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                 <div className="modal-footer-centered" style={{ display: 'flex', gap: '1rem', width: '100%', padding: '1.5rem 2rem' }}>
                     <button className="secondary-btn-wide" onClick={onClose} style={{ flex: 1 }}>Close Profile</button>
                     {['onboarding', 'under_review'].includes(emp.status?.toLowerCase()) && (
-                        <button
-                            className="submit-btn-wide"
-                            onClick={() => onApprove(employee)}
-                            style={{ flex: 2, background: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-                        >
-                            <CheckCircle2 size={18} />
-                            Approve Onboarding
-                        </button>
+                        <div className="action-group-wide">
+                            <button
+                                className="reject-btn-wide"
+                                onClick={() => onApprove(employee, 'REJECTED')}
+                            >
+                                <XCircle size={18} />
+                                Reject Onboard
+                            </button>
+                            <button
+                                className="approve-btn-wide"
+                                onClick={() => onApprove(employee, 'APPROVED')}
+                            >
+                                <CheckCircle2 size={18} />
+                                Approve Onboarding
+                            </button>
+                        </div>
                     )}
                 </div>
             </div>
