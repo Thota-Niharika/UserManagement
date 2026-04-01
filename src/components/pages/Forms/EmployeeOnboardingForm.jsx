@@ -1,24 +1,44 @@
-import React, { useState, useEffect, useMemo } from 'react';
+// import React, { useState, useEffect, useMemo } from 'react';
+// import { useSearchParams } from 'react-router-dom';
+// import { Upload, Plus, Trash2, CheckCircle, ChevronRight, ChevronLeft } from 'lucide-react';
+// import apiService from '../../../services/api';
+// import { findByPattern, findProof, scavengeValue, scavengePath } from '../../../utils/normalizeEmployee';
+
+// const EmployeeOnboardingForm = () => {
+//     const [searchParams] = useSearchParams();
+//     const token = searchParams.get('token');
+//     const [step, setStep] = useState(1);
+//     const [errors, setErrors] = useState({});
+//     const [loading, setLoading] = useState(false);
+//     const [rejectedFields, setRejectedFields] = useState([]);
+
+import React, { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Upload, Plus, Trash2, CheckCircle, ChevronRight, ChevronLeft } from 'lucide-react';
-import apiService from '../../../services/api';
+import apiService from "../../../services/api";
 import { findByPattern, findProof, scavengeValue, scavengePath } from '../../../utils/normalizeEmployee';
 
 const EmployeeOnboardingForm = () => {
+
     const [searchParams] = useSearchParams();
+<<<<<<< HEAD
 
     // Extract token robustly
     const token = useMemo(() => {
         const urlParams = new URLSearchParams(window.location.search);
         return urlParams.get('token') || searchParams.get('token');
     }, [searchParams]);
+=======
+    const token = searchParams.get('token');
+>>>>>>> 62ebbba (commit)
 
     const [step, setStep] = useState(1);
     const [errors, setErrors] = useState({});
     const [loading, setLoading] = useState(false);
     const [rejectedFields, setRejectedFields] = useState([]);
 
-    useEffect(() => {
+
+    React.useEffect(() => {
         if (token) {
             fetchExistingData(token);
         }
@@ -31,7 +51,6 @@ const EmployeeOnboardingForm = () => {
             const data = await apiService.getOnboardingByToken(onboardingToken);
             if (data) {
                 console.log("✅ [DEBUG] Oboarding Data Found:", data);
-                console.log("📦 [DEBUG] Data Keys:", Object.keys(data));
                 if (data.rejectedDocuments) {
                     setRejectedFields(data.rejectedDocuments);
                 }
@@ -111,8 +130,14 @@ const EmployeeOnboardingForm = () => {
             const memoPath = edu.marksMemoPath || edu.marksMemoFilePath || scavengePath(edu, ['marksMemo', 'marks', 'memo', 'transcript']);
 
             return {
+<<<<<<< HEAD
                 institutionName: edu.institutionName || scavengeValue(edu, ['institution', 'college', 'school', 'university', 'board']) || '',
                 htNumber: edu.hallTicketNo || edu.hallTicketNumber || scavengeValue(edu, ['hallTicket', 'htNumber', 'rollNo']) || '',
+=======
+                id: edu.id || scavengeValue(edu, ['id']) || null,
+                school: edu.institutionName || scavengeValue(edu, ['institution', 'college', 'school', 'university', 'board']) || '',
+                htNumber: edu.hallTicketNo || scavengeValue(edu, ['hallTicket', 'htNumber', 'rollNo']) || '',
+>>>>>>> 62ebbba (commit)
                 year: edu.passoutYear || scavengeValue(edu, ['year', 'passout', 'date', 'passing', 'completion']) || '',
                 percentage: edu.percentageCgpa || edu.percentage || scavengeValue(edu, ['percentage', 'cgpa', 'marks', 'score', 'grade']) || '',
                 certificate: certPath ? { name: certPath.split('/').pop(), isServerFile: true, path: certPath } : null,
@@ -161,14 +186,21 @@ const EmployeeOnboardingForm = () => {
         });
 
         // --- Map Bank ---
+        const b = emp.bankDetails || {};
+        const bankDocValue = emp.documentFilePath || emp.document_file_path || b.documentFilePath || b.document_file_path || emp.passbookPath || null;
+        console.log("🏦 [DEBUG] Bank Extraction - raw bankDetails:", b);
+
         setBank({
-            name: emp.bankName || '',
-            branch: emp.branchName || '',
-            accNumber: emp.accountNumber || '',
-            ifsc: emp.ifscCode || '',
-            docType: emp.passbookPath ? 'Passbook' : 'Passbook',
-            docImage: emp.passbookPath ? { name: emp.passbookPath.split('/').pop(), isServerFile: true, path: emp.passbookPath } : null,
-            upiId: emp.upiId || ''
+            id: b.id || scavengeValue(b, ['id']) || null,
+            bankName: emp.bankName || b.bankName || findByPattern(b, ['bankName', 'bank_name', 'bank_Name']) || findByPattern(emp, ['bankName', 'bank_name']) || '',
+            branchName: emp.branchName || b.branchName || b.branch || findByPattern(b, ['branch']) || findByPattern(emp, ['branchName', 'branch_name']) || '',
+            accountNumber: emp.accountNumber || b.accountNumber || findByPattern(b, ['account', 'acc_no']) || findByPattern(emp, ['accountNumber', 'account_no']) || '',
+            ifscCode: emp.ifscCode || b.ifscCode || findByPattern(b, ['ifsc']) || findByPattern(emp, ['ifscCode', 'ifsc_code']) || '',
+            upiId: emp.upiId || b.upiId || findByPattern(b, ['upi']) || findByPattern(emp, ['upiId', 'upi_id']) || '',
+            documentType: emp.documentType || b.documentType || 'PASSBOOK',
+            bankDocumentPath: bankDocValue || '',
+            docImage: bankDocValue ? { name: bankDocValue.split('/').pop(), isServerFile: true, path: bankDocValue } : null,
+            employeeFormId: emp.employeeFormId || emp.employeeId || emp.id || null
         });
 
         // --- Map Documents ---
@@ -189,6 +221,7 @@ const EmployeeOnboardingForm = () => {
         };
 
         const docState = {
+            id: pan.id || aadhar.id || photo.id || passport.id || voter.id || scavengeValue(pan, ['id']) || null,
             panNumber: pan.documentNumber || scavengeValue(emp, ['panNumber', 'panId', 'panNo']) || '',
             panCard: getDocPath(pan) ? { name: getDocPath(pan).split('/').pop(), isServerFile: true, path: getDocPath(pan) } : null,
             aadharNumber: aadhar.documentNumber || scavengeValue(emp, ['aadharNumber', 'aadharId', 'aadharNo']) || '',
@@ -212,7 +245,8 @@ const EmployeeOnboardingForm = () => {
         let newErrors = {};
 
         if (currentStep === 1) {
-            const required = ['fullName', 'phone', 'email', 'dateOfBirth', 'permAddress', 'presAddress', 'fatherName', 'fatherPhone', 'motherName', 'motherPhone', 'emergencyName', 'emergencyRel', 'emergencyPhone'];
+            // Relaxed: fatherPhone and motherPhone no longer strictly required to prevent friction
+            const required = ['fullName', 'phone', 'email', 'dateOfBirth', 'permAddress', 'presAddress', 'fatherName', 'motherName', 'emergencyName', 'emergencyRel', 'emergencyPhone'];
             for (const field of required) {
                 if (!personal[field]) {
                     newErrors[field] = 'This field is required';
@@ -229,20 +263,38 @@ const EmployeeOnboardingForm = () => {
                 if (!data.certificate) newErrors[`${level}_certificate`] = 'Required';
             }
         } else if (currentStep === 4) {
-            const requiredBank = ['name', 'branch', 'accNumber', 'ifsc', 'upiId'];
+            // Relaxed: upiId is optional
+            const requiredBank = ['bankName', 'branchName', 'accountNumber', 'ifscCode'];
             for (const field of requiredBank) {
                 if (!bank[field]) {
                     newErrors[field] = 'Required';
                 }
             }
+            if (bank.ifscCode && !/^[A-Z]{4}0[0-9]{6}$/.test(bank.ifscCode)) {
+                newErrors['ifscCode'] = 'Invalid IFSC format';
+            }
             if (!bank.docImage) {
-                newErrors['bankDoc'] = 'Required';
+                newErrors['bankDoc'] = 'Bank document (passbook/cheque) is required';
             }
         } else if (currentStep === 5) {
-            if (!documents.panNumber) newErrors['panNumber'] = 'Required';
+            // Clean values before validation (match backend cleanFields)
+            const cleanPan = (documents.panNumber || '').replace(/\s+/g, '').toUpperCase();
+            const cleanAadhar = (documents.aadharNumber || '').replace(/\s+/g, '');
+
+            if (!cleanPan) {
+                newErrors['panNumber'] = 'Required';
+            } else if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(cleanPan)) {
+                newErrors['panNumber'] = 'Invalid PAN format (e.g. ABCDE1234F)';
+            }
             if (!documents.panCard) newErrors['panCard'] = 'Required';
-            if (!documents.aadharNumber) newErrors['aadharNumber'] = 'Required';
+
+            if (!cleanAadhar) {
+                newErrors['aadharNumber'] = 'Required';
+            } else if (!/^[0-9]{12}$/.test(cleanAadhar)) {
+                newErrors['aadharNumber'] = 'Aadhaar must be exactly 12 digits';
+            }
             if (!documents.aadharCard) newErrors['aadharCard'] = 'Required';
+
             if (!documents.passportPhoto) newErrors['passportPhoto'] = 'Required';
         }
 
@@ -266,10 +318,15 @@ const EmployeeOnboardingForm = () => {
         if (nextStep > step) {
             if (!validateStep(step)) return;
         }
+        if (nextStep === 6) {
+            // No extra validation needed for review step transition if step 5 passed
+        }
         setErrors({}); // Clear errors when moving
         setStep(nextStep);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
+
+
 
     // --- State ---
     const [personal, setPersonal] = useState({
@@ -287,14 +344,23 @@ const EmployeeOnboardingForm = () => {
         emergencyRel: '',
         emergencyPhone: '',
         dateOfBirth: '',
+        employeeFormId: null, // Track the ID if returning to form
     });
 
     const [education, setEducation] = useState({
+<<<<<<< HEAD
         ssc: { institutionName: '', htNumber: '', year: '', percentage: '', certificate: null, marksMemo: null },
         inter: { institutionName: '', htNumber: '', year: '', percentage: '', certificate: null, marksMemo: null },
         grad: { institutionName: '', htNumber: '', year: '', percentage: '', certificate: null, marksMemo: null },
         postGrad: [], // Array of objects
         otherCerts: [], // { institute: '', certNumber: '', certificate: null }
+=======
+        ssc: { school: '', htNumber: '', year: '', percentage: '', certificate: null, certificatePath: '', marksMemoPath: '' },
+        inter: { college: '', htNumber: '', year: '', percentage: '', certificate: null, certificatePath: '', marksMemoPath: '' },
+        grad: { college: '', htNumber: '', year: '', percentage: '', marksMemo: null, certificate: null, certificatePath: '', marksMemoPath: '' },
+        postGrad: [],  // Array of objects
+        otherCerts: [], // { institute: '', certNumber: '', certificate: null, certificatePath: '' }
+>>>>>>> 62ebbba (commit)
     });
 
     const [experience, setExperience] = useState({
@@ -305,21 +371,35 @@ const EmployeeOnboardingForm = () => {
     const [documents, setDocuments] = useState({
         panNumber: '',
         panCard: null,
+        panCardPath: '',
         aadharNumber: '',
         aadharCard: null,
+        aadharCardPath: '',
         passportPhoto: null,
+        passportPhotoPath: '',
         passportDoc: null,
-        voterId: null
+        passportDocPath: '',
+        voterId: null,
+        voterIdPath: '',
     });
 
     const [livePhoto, setLivePhoto] = useState(null);
 
     const [bank, setBank] = useState({
+<<<<<<< HEAD
         name: '',
         branch: '',
         accNumber: '',
         ifsc: '',
         docType: 'PASSBOOK',
+=======
+        bankName: '',
+        branchName: '',
+        accountNumber: '',
+        ifscCode: '',
+        documentType: 'PASSBOOK',
+        bankDocumentPath: '',
+>>>>>>> 62ebbba (commit)
         docImage: null,
         upiId: ''
     });
@@ -362,6 +442,8 @@ const EmployeeOnboardingForm = () => {
     };
 
     const handleFileChange = (section, level, field, file, index = null) => {
+        if (!file) return;
+
         if (section === 'education') {
             if (index !== null) {
                 const newArr = [...education[level]];
@@ -387,13 +469,6 @@ const EmployeeOnboardingForm = () => {
             setExperience(prev => ({ ...prev, [level]: newArr }));
         } else if (section === 'bank') {
             setBank(prev => ({ ...prev, [field]: file }));
-            if (field === 'docImage' && errors.bankDoc) {
-                setErrors(prev => {
-                    const newErrs = { ...prev };
-                    delete newErrs.bankDoc;
-                    return newErrs;
-                });
-            }
         } else if (section === 'documents') {
             setDocuments(prev => ({ ...prev, [field]: file }));
             if (errors[field]) {
@@ -405,6 +480,7 @@ const EmployeeOnboardingForm = () => {
             }
         }
     };
+
 
     const handleBankChange = (e) => {
         const { name, value } = e.target;
@@ -420,7 +496,14 @@ const EmployeeOnboardingForm = () => {
 
     const handleDocumentChange = (e) => {
         const { name, value } = e.target;
-        setDocuments(prev => ({ ...prev, [name]: value }));
+        // Match backend cleanFields(): uppercase PAN, strip whitespace from Aadhaar
+        let cleanedValue = value;
+        if (name === 'panNumber') {
+            cleanedValue = value.replace(/\s+/g, '').toUpperCase();
+        } else if (name === 'aadharNumber') {
+            cleanedValue = value.replace(/\s+/g, '');
+        }
+        setDocuments(prev => ({ ...prev, [name]: cleanedValue }));
         if (errors[name]) {
             setErrors(prev => {
                 const newErrs = { ...prev };
@@ -434,14 +517,39 @@ const EmployeeOnboardingForm = () => {
     const addPostGrad = () => {
         setEducation(prev => ({
             ...prev,
+<<<<<<< HEAD
             postGrad: [...prev.postGrad, { institutionName: '', year: '', percentage: '', certificate: null }]
+=======
+            postGrad: [...prev.postGrad, { college: '', year: '', percentage: '', certificate: null, certificatePath: '', uploading: false }]
+>>>>>>> 62ebbba (commit)
         }));
     };
 
     const updatePostGrad = (index, field, value) => {
-        const newArr = [...education.postGrad];
-        newArr[index][field] = value;
-        setEducation(prev => ({ ...prev, postGrad: newArr }));
+        if (field === 'certificate') {
+            const newArr = [...education.postGrad];
+            newArr[index][field] = value;
+            newArr[index].uploading = true;
+            setEducation(prev => ({ ...prev, postGrad: newArr }));
+
+            performUpload(value,
+                (path) => {
+                    const updated = [...education.postGrad];
+                    updated[index][field + 'Path'] = path;
+                    updated[index].uploading = false;
+                    setEducation(prev => ({ ...prev, postGrad: updated }));
+                },
+                () => {
+                    const updated = [...education.postGrad];
+                    updated[index].uploading = false;
+                    setEducation(prev => ({ ...prev, postGrad: updated }));
+                }
+            );
+        } else {
+            const newArr = [...education.postGrad];
+            newArr[index][field] = value;
+            setEducation(prev => ({ ...prev, postGrad: newArr }));
+        }
     };
 
     const removePostGrad = (index) => {
@@ -454,14 +562,35 @@ const EmployeeOnboardingForm = () => {
     const addCert = () => {
         setEducation(prev => ({
             ...prev,
-            otherCerts: [...prev.otherCerts, { institute: '', certNumber: '', certificate: null }]
+            otherCerts: [...prev.otherCerts, { institute: '', certNumber: '', certificate: null, certificatePath: '', uploading: false }]
         }));
     };
 
     const updateCert = (index, field, value) => {
-        const newArr = [...education.otherCerts];
-        newArr[index][field] = value;
-        setEducation(prev => ({ ...prev, otherCerts: newArr }));
+        if (field === 'certificate') {
+            const newArr = [...education.otherCerts];
+            newArr[index][field] = value;
+            newArr[index].uploading = true;
+            setEducation(prev => ({ ...prev, otherCerts: newArr }));
+
+            performUpload(value,
+                (path) => {
+                    const updated = [...education.otherCerts];
+                    updated[index][field + 'Path'] = path;
+                    updated[index].uploading = false;
+                    setEducation(prev => ({ ...prev, otherCerts: updated }));
+                },
+                () => {
+                    const updated = [...education.otherCerts];
+                    updated[index].uploading = false;
+                    setEducation(prev => ({ ...prev, otherCerts: updated }));
+                }
+            );
+        } else {
+            const newArr = [...education.otherCerts];
+            newArr[index][field] = value;
+            setEducation(prev => ({ ...prev, otherCerts: newArr }));
+        }
     };
 
     const removeCert = (index) => {
@@ -475,7 +604,7 @@ const EmployeeOnboardingForm = () => {
     const addInternship = () => {
         setExperience(prev => ({
             ...prev,
-            internships: [...prev.internships, { company: '', joining: '', relieving: '', id: '', duration: '', offerLetter: null, relievingLetter: null }]
+            internships: [...prev.internships, { company: '', joining: '', relieving: '', id: '', duration: '', offerLetter: null, relievingLetter: null, offerLetterPath: '', relievingLetterPath: '', uploading: false }]
         }));
     };
 
@@ -493,14 +622,35 @@ const EmployeeOnboardingForm = () => {
     const addWork = () => {
         setExperience(prev => ({
             ...prev,
-            workHistory: [...prev.workHistory, { company: '', years: '', offerLetter: null, relievingLetter: null, payslips: null, experienceCert: null }]
+            workHistory: [...prev.workHistory, { company: '', years: '', offerLetter: null, relievingLetter: null, payslips: null, experienceCert: null, offerLetterPath: '', relievingLetterPath: '', payslipsPath: '', experienceCertPath: '', uploading: false }]
         }));
     };
 
     const updateWork = (index, field, value) => {
-        const newArr = [...experience.workHistory];
-        newArr[index][field] = value;
-        setExperience(prev => ({ ...prev, workHistory: newArr }));
+        if (['offerLetter', 'relievingLetter', 'payslips', 'experienceCert'].includes(field)) {
+            const newArr = [...experience.workHistory];
+            newArr[index][field] = value;
+            newArr[index].uploading = true;
+            setExperience(prev => ({ ...prev, workHistory: newArr }));
+
+            performUpload(value,
+                (path) => {
+                    const updated = [...experience.workHistory];
+                    updated[index][field + 'Path'] = path;
+                    updated[index].uploading = false;
+                    setExperience(prev => ({ ...prev, workHistory: updated }));
+                },
+                () => {
+                    const updated = [...experience.workHistory];
+                    updated[index].uploading = false;
+                    setExperience(prev => ({ ...prev, workHistory: updated }));
+                }
+            );
+        } else {
+            const newArr = [...experience.workHistory];
+            newArr[index][field] = value;
+            setExperience(prev => ({ ...prev, workHistory: newArr }));
+        }
     };
 
     const removeWork = (index) => {
@@ -520,11 +670,73 @@ const EmployeeOnboardingForm = () => {
         });
     };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    // const handleSubmit = async (e) => {
+    //     e.preventDefault();
 
-        // Final validation check for the last step
-        if (!validateStep(5)) return;
+    //     // Final validation check for the last step
+    //     // if (!validateStep(5)) return;
+
+    //     try {
+    //         console.log("🚀 Starting Onboarding Submission (Action Plan: Multipart)...");
+
+
+
+    // Helper to validate path length and get filename
+    // const getFileInfo = (file, fieldName) => {
+    //     if (!file) return null;
+    //     const fileName = file.name || 'document';
+    //     console.log(`📄 Field: ${fieldName}, Name: ${fileName}, Length: ${fileName.length}`);
+
+    //     if (fileName.length > 200) {
+    //         throw new Error(`Filename for ${fieldName} is too long (${fileName.length} chars). Max 200.`);
+    //     }
+    //     return fileName;
+    // };
+
+    const getFileInfo = (file, fieldName) => {
+        if (!file) return null;
+
+        // if server file already exists
+        if (file.isServerFile && file.path) {
+            const name = file.path.split('/').pop();
+            return name;
+        }
+
+        const fileName = file.name || null;
+
+        console.log(`📄 Field: ${fieldName}, Name: ${fileName}`);
+
+        if (!fileName) {
+            throw new Error(`${fieldName} filename missing`);
+        }
+
+        if (fileName.length > 200) {
+            throw new Error(`Filename for ${fieldName} too long`);
+        }
+
+        return fileName;
+    };
+
+    const mapEducation = (edu) => {
+        if (!edu) return null;
+        return {
+            institutionName: edu.school || edu.college || '',
+            hallTicketNumber: edu.htNumber || '',
+            passoutYear: edu.year || '',
+            percentage: edu.percentage || '',
+            certificateFilePath: getFileInfo(edu.certificate, "Edu Cert"),
+            marksMemoFilePath: getFileInfo(edu.marksMemo, "Edu Marks")
+        };
+    };
+
+    const handleSubmit = async (e) => {
+        if (e) e.preventDefault();
+
+        if (!validateStep(5)) {
+            alert("Please fix the validation errors before submitting.");
+            setStep(5);
+            return;
+        }
 
         // Explicit bank details validation
         if (!bank.name || !bank.accNumber || !bank.ifsc || !bank.branch) {
@@ -540,20 +752,20 @@ const EmployeeOnboardingForm = () => {
         }
 
         try {
-            console.log("🚀 Starting Onboarding Submission (Action Plan: Multipart)...");
+            setLoading(true);
 
-            // Helper to validate path length and get filename
-            const getFileInfo = (file, fieldName) => {
-                if (!file) return null;
-                const fileName = file.name || 'document';
-                console.log(`📄 Field: ${fieldName}, Name: ${fileName}, Length: ${fileName.length}`);
+            const tokenFromUrl = new URLSearchParams(window.location.search).get('token');
+            const submitToken = token || tokenFromUrl;
 
-                if (fileName.length > 200) {
-                    throw new Error(`Filename for ${fieldName} is too long (${fileName.length} chars). Max 200.`);
-                }
-                return fileName;
-            };
+            // Fix 2: Stop Form Submit if File Missing
+            if (!bank.docImage && !bank.bankDocumentPath) {
+                alert("Please upload bank document (Cancelled Cheque / Passbook).");
+                setStep(4);
+                setLoading(false);
+                return;
+            }
 
+<<<<<<< HEAD
             const mapEducation = (edu, type) => {
                 if (!edu) return null;
                 return {
@@ -569,6 +781,10 @@ const EmployeeOnboardingForm = () => {
 
             // 1. Prepare JSON DTO (Reverting to separate fields to avoid 'Unrecognized field "educations"' error)
             const jsonData = {
+=======
+            // --- Revert: Use JSON DTO + Files (Resolves 'Required part data is not present') ---
+            const dto = {
+>>>>>>> 62ebbba (commit)
                 fullName: personal.fullName,
                 email: personal.email,
                 phoneNumber: personal.phone,
@@ -577,12 +793,13 @@ const EmployeeOnboardingForm = () => {
                 permanentAddress: personal.permAddress,
                 presentAddress: personal.presAddress,
                 fathersName: personal.fatherName,
-                fathersPhone: personal.fatherPhone,
+                fathersPhone: personal.fatherPhone || null,
                 mothersName: personal.motherName,
-                mothersPhone: personal.motherPhone,
+                mothersPhone: personal.motherPhone || null,
                 emergencyContactName: personal.emergencyName,
                 emergencyRelationship: personal.emergencyRel,
                 emergencyNumber: personal.emergencyPhone,
+<<<<<<< HEAD
                 bankDetails: {
                     bankName: bank.name,
                     branchName: bank.branch,
@@ -596,29 +813,94 @@ const EmployeeOnboardingForm = () => {
                 intermediate: mapEducation(education.inter, 'INTERMEDIATE'),
                 graduation: mapEducation(education.grad, 'GRADUATION'),
                 postGraduations: education.postGrad.map(pg => mapEducation(pg, 'POST_GRADUATION')),
+=======
+
+                ssc: {
+                    id: education.ssc.id || null,
+                    educationType: 'SSC',
+                    institutionName: education.ssc.school || education.ssc.college,
+                    hallTicketNumber: education.ssc.htNumber,
+                    passoutYear: education.ssc.year,
+                    percentage: education.ssc.percentage,
+                    certificateFilePath: getFileInfo(education.ssc.certificate, "SSC Cert"),
+                    marksMemoFilePath: getFileInfo(education.ssc.marksMemo, "SSC Memo"),
+                },
+                intermediate: {
+                    id: education.inter.id || null,
+                    educationType: 'INTERMEDIATE',
+                    institutionName: education.inter.school || education.inter.college,
+                    hallTicketNumber: education.inter.htNumber,
+                    passoutYear: education.inter.year,
+                    percentage: education.inter.percentage,
+                    certificateFilePath: getFileInfo(education.inter.certificate, "Inter Cert"),
+                    marksMemoFilePath: getFileInfo(education.inter.marksMemo, "Inter Memo"),
+                },
+                graduation: {
+                    id: education.grad.id || null,
+                    educationType: 'GRADUATION',
+                    institutionName: education.grad.school || education.grad.college,
+                    hallTicketNumber: education.grad.htNumber,
+                    passoutYear: education.grad.year,
+                    percentage: education.grad.percentage,
+                    certificateFilePath: getFileInfo(education.grad.certificate, "Grad Cert"),
+                    marksMemoFilePath: getFileInfo(education.grad.marksMemo, "Grad Memo"),
+                },
+                postGraduations: education.postGrad.map(pg => ({
+                    id: pg.id || null,
+                    educationType: 'POST_GRADUATION',
+                    institutionName: pg.school || pg.college,
+                    passoutYear: pg.year,
+                    percentage: pg.percentage,
+                    certificateFilePath: getFileInfo(pg.certificate, "PG Cert"),
+                })),
+>>>>>>> 62ebbba (commit)
                 otherCertificates: education.otherCerts.map(cert => ({
+                    id: cert.id || null,
                     instituteName: cert.institute,
                     certificateNumber: cert.certNumber,
+<<<<<<< HEAD
                     certificateFilePath: getFileInfo(cert.certificate, "Other Cert")
+=======
+                    certificatePath: getFileInfo(cert.certificate, "Other Cert"),
+>>>>>>> 62ebbba (commit)
                 })),
+
                 internships: experience.internships.map(int => ({
+                    id: int.id || null,
                     companyName: int.company,
                     joiningDate: int.joining,
                     relievingDate: int.relieving,
                     internshipId: int.id,
                     duration: int.duration,
-                    offerLetterPath: getFileInfo(int.offerLetter, "Internship Offer"),
-                    experienceCertificatePath: getFileInfo(int.relievingLetter, "Internship Cert")
+                    offerLetterPath: getFileInfo(int.offerLetter, "Int Offer"),
+                    experienceCertificatePath: getFileInfo(int.relievingLetter, "Int Exp"),
                 })),
                 workExperiences: experience.workHistory.map(work => ({
+                    id: work.id || null,
                     companyName: work.company,
                     yearsOfExperience: work.years,
                     offerLetterPath: getFileInfo(work.offerLetter, "Work Offer"),
                     relievingLetterPath: getFileInfo(work.relievingLetter, "Work Relieving"),
-                    payslipsPath: getFileInfo(work.payslips, "Work Payslip"),
-                    experienceCertificatePath: getFileInfo(work.experienceCert, "Work Exp Cert")
+                    payslipsPath: getFileInfo(work.payslips, "Work Payslips"),
+                    experienceCertificatePath: getFileInfo(work.experienceCert, "Work Exp"),
                 })),
+
+                bankDetails: {
+                    id: bank.id || null,
+                    bankName: bank.bankName,
+                    branchName: bank.branchName,
+                    accountNumber: bank.accountNumber,
+                    ifscCode: bank.ifscCode,
+                    upiId: bank.upiId || null,
+                    documentType: bank.documentType || 'PASSBOOK',
+                    status: 'PENDING',
+                    documentFilePath: bank.bankDocumentPath || getFileInfo(bank.docImage, "Bank Doc"),
+                },
+
+                // --- Fat IdentityProof DTO ---
+                // The backend uses 'panProof' as the field name even if it contains all other info
                 panProof: {
+<<<<<<< HEAD
                     panNumber: documents.panNumber
                 },
                 aadharProof: {
@@ -693,9 +975,43 @@ const EmployeeOnboardingForm = () => {
             experience.internships.forEach((int, i) => {
                 appendFile(`internship_offer_letter_${i}`, int.offerLetter);
                 appendFile(`internship_experience_certificate_${i}`, int.relievingLetter);
+=======
+                    id: documents.id || null,
+                    panNumber: (documents.panNumber || '').replace(/\s+/g, '').toUpperCase(),
+                    panFilePath: documents.panCardPath || getFileInfo(documents.panCard, "PAN Card"),
+                    aadhaarNumber: (documents.aadharNumber || '').replace(/\s+/g, ''),
+                    aadhaarFilePath: documents.aadharCardPath || getFileInfo(documents.aadharCard, "Aadhar Card"),
+                    photoFilePath: documents.passportPhotoPath || getFileInfo(documents.passportPhoto, "Photo"),
+                    passportFilePath: documents.passportDocPath || getFileInfo(documents.passportDoc, "Passport"),
+                    voterIdFilePath: documents.voterIdPath || getFileInfo(documents.voterId, "Voter ID"),
+                    status: 'PENDING'
+                },
+            };
+
+            const isNewFile = (f) => f && !f.isServerFile && f instanceof File;
+            const files = {};
+
+            if (isNewFile(education.ssc.certificate)) files['sscCertificate'] = education.ssc.certificate;
+            if (isNewFile(education.ssc.marksMemo)) files['sscMarksMemo'] = education.ssc.marksMemo;
+            if (isNewFile(education.inter.certificate)) files['interCertificate'] = education.inter.certificate;
+            if (isNewFile(education.inter.marksMemo)) files['interMarksMemo'] = education.inter.marksMemo;
+            if (isNewFile(education.grad.certificate)) files['gradCertificate'] = education.grad.certificate;
+            if (isNewFile(education.grad.marksMemo)) files['gradMarksMemo'] = education.grad.marksMemo;
+
+            education.postGrad.forEach((pg, i) => {
+                if (isNewFile(pg.certificate)) files[`postGradCertificate_${i}`] = pg.certificate;
+            });
+            education.otherCerts.forEach((c, i) => {
+                if (isNewFile(c.certificate)) files[`otherCertificate_${i}`] = c.certificate;
             });
 
+            experience.internships.forEach((int, i) => {
+                if (isNewFile(int.offerLetter)) files[`internshipOfferLetter_${i}`] = int.offerLetter;
+                if (isNewFile(int.relievingLetter)) files[`internshipExpCert_${i}`] = int.relievingLetter;
+>>>>>>> 62ebbba (commit)
+            });
             experience.workHistory.forEach((work, i) => {
+<<<<<<< HEAD
                 appendFile(`experience_offer_letter_${i}`, work.offerLetter);
                 appendFile(`experience_relieving_letter_${i}`, work.relievingLetter);
                 appendFile(`experience_payslips_${i}`, work.payslips);
@@ -721,9 +1037,38 @@ const EmployeeOnboardingForm = () => {
             } else {
                 alert("Submission failed: " + error.message);
             }
+=======
+                if (isNewFile(work.offerLetter)) files[`workOfferLetter_${i}`] = work.offerLetter;
+                if (isNewFile(work.relievingLetter)) files[`workRelievingLetter_${i}`] = work.relievingLetter;
+                if (isNewFile(work.payslips)) files[`workPayslips_${i}`] = work.payslips;
+                if (isNewFile(work.experienceCert)) files[`workExpCert_${i}`] = work.experienceCert;
+            });
+
+            if (isNewFile(bank.docImage)) files['passbookFile'] = bank.docImage;
+            if (isNewFile(documents.panCard)) files['panFile'] = documents.panCard;
+            if (isNewFile(documents.aadharCard)) files['aadhaarFile'] = documents.aadharCard;
+            if (isNewFile(documents.passportPhoto)) files['photoFile'] = documents.passportPhoto;
+            if (isNewFile(documents.passportDoc)) files['passportFile'] = documents.passportDoc;
+            if (isNewFile(documents.voterId)) files['voterIdFile'] = documents.voterId;
+
+            console.log("🚀 Submitting multipart payload. DTO:", dto, "Files:", Object.keys(files));
+
+            const response = await apiService.submitWithDto(
+                `/onboarding/submit?token=${submitToken}`,
+                dto,
+                files
+            );
+
+            console.log("✅ Onboarding Submit Success:", response);
+            setStep(7);
+        } catch (error) {
+            console.error("❌ Submission Failed:", error);
+            alert(`Submission failed: ${error.message}`);
+        } finally {
+            setLoading(false);
+>>>>>>> 62ebbba (commit)
         }
     };
-
     // --- Render ---
     return (
         <div className="form-container">
@@ -750,8 +1095,6 @@ const EmployeeOnboardingForm = () => {
                     <span className={step >= 4 ? 'active' : ''}>4. Bank</span>
                     <span className="line"></span>
                     <span className={step >= 5 ? 'active' : ''}>5. Documents</span>
-                    {/* <span className="line"></span>
-                    <span className={step >= 6 ? 'active' : ''}>6. Live Photo</span> */}
                 </div>
 
                 <form onSubmit={handleSubmit}>
@@ -803,11 +1146,13 @@ const EmployeeOnboardingForm = () => {
                             <h3>Family Details</h3>
                             <div className="row">
                                 <Input label="Father's Name" name="fatherName" val={personal.fatherName} fn={handlePersonalChange} req error={errors.fatherName} rejected={isFieldRejected('fathersName')} />
-                                <Input label="Father's Phone" name="fatherPhone" val={personal.fatherPhone} fn={handlePersonalChange} req error={errors.fatherPhone} rejected={isFieldRejected('fathersPhone')} />
+                                {/* Optional: fatherPhone should not be HTML-required */}
+                                <Input label="Father's Phone" name="fatherPhone" val={personal.fatherPhone} fn={handlePersonalChange} error={errors.fatherPhone} rejected={isFieldRejected('fathersPhone')} />
                             </div>
                             <div className="row">
                                 <Input label="Mother's Name" name="motherName" val={personal.motherName} fn={handlePersonalChange} req error={errors.motherName} rejected={isFieldRejected('mothersName')} />
-                                <Input label="Mother's Phone" name="motherPhone" val={personal.motherPhone} fn={handlePersonalChange} req error={errors.motherPhone} rejected={isFieldRejected('mothersPhone')} />
+                                {/* Optional: motherPhone should not be HTML-required */}
+                                <Input label="Mother's Phone" name="motherPhone" val={personal.motherPhone} fn={handlePersonalChange} error={errors.motherPhone} rejected={isFieldRejected('mothersPhone')} />
                             </div>
 
                             <h3>Emergency Contact</h3>
@@ -989,10 +1334,11 @@ const EmployeeOnboardingForm = () => {
                         <div className="form-section animate-fade-in">
                             <h2>Bank Details</h2>
                             <div className="row">
-                                <Input label="Bank Name" name="name" val={bank.name} fn={handleBankChange} req error={errors.name} rejected={isFieldRejected('bankName')} />
-                                <Input label="Branch Name" name="branch" val={bank.branch} fn={handleBankChange} req error={errors.branch} rejected={isFieldRejected('branchName')} />
+                                <Input label="Bank Name" name="bankName" val={bank.bankName} fn={handleBankChange} req error={errors.bankName} rejected={isFieldRejected('bankName')} />
+                                <Input label="Branch Name" name="branchName" val={bank.branchName} fn={handleBankChange} req error={errors.branchName} rejected={isFieldRejected('branchName')} />
                             </div>
                             <div className="row">
+<<<<<<< HEAD
                                 <Input label="Account Number" name="accNumber" val={bank.accNumber} fn={handleBankChange} req error={errors.accNumber} rejected={isFieldRejected('accountNumber')} />
                                 <Input
                                     label="IFSC Code"
@@ -1006,35 +1352,49 @@ const EmployeeOnboardingForm = () => {
                                     pattern="[A-Za-z]{4}0[0-9]{6}"
                                     title="Enter valid IFSC like SBIN0001234"
                                 />
+=======
+                                <Input label="Account Number" name="accountNumber" val={bank.accountNumber} fn={handleBankChange} req error={errors.accountNumber} rejected={isFieldRejected('accountNumber')} />
+                                <Input label="IFSC Code" name="ifscCode" val={bank.ifscCode} fn={handleBankChange} req error={errors.ifscCode} rejected={isFieldRejected('ifscCode')} />
+>>>>>>> 62ebbba (commit)
                             </div>
 
                             <div className="row">
-                                <Input label="UPI ID" name="upiId" val={bank.upiId} fn={handleBankChange} req error={errors.upiId} rejected={isFieldRejected('upiId')} />
+                                {/* Optional: UPI ID should not be HTML-required */}
+                                <Input label="UPI ID" name="upiId" val={bank.upiId} fn={handleBankChange} error={errors.upiId} rejected={isFieldRejected('upiId')} />
                             </div>
 
                             <h3>Document Upload</h3>
                             <div className="row">
-                                <div className={`input-group ${isFieldRejected('passbookPath') ? 'error' : ''}`}>
-                                    <label>Document Type {isFieldRejected('passbookPath') && <span className="rejected-badge">Rejected</span>}</label>
+                                <div className={`input-group ${isFieldRejected('documentFilePath') ? 'error' : ''}`}>
+                                    <label>Document Type {isFieldRejected('documentFilePath') && <span className="rejected-badge">Rejected</span>}</label>
                                     <select
-                                        name="docType"
-                                        value={bank.docType}
+                                        name="documentType"
+                                        value={bank.documentType}
                                         onChange={handleBankChange}
-                                        className={`form-input ${isFieldRejected('passbookPath') ? 'error' : ''}`}
+                                        className={`form-input ${isFieldRejected('documentFilePath') ? 'error' : ''}`}
                                     >
                                         <option value="PASSBOOK">Passbook</option>
+<<<<<<< HEAD
                                         <option value="STATEMENT">Bank Statement</option>
                                         <option value="CHEQUE">Cancelled Cheque</option>
+=======
+                                        <option value="BANK_STATEMENT">Bank Statement</option>
+                                        <option value="CANCELLED_CHEQUE">Cancelled Cheque</option>
+>>>>>>> 62ebbba (commit)
                                     </select>
-                                    {isFieldRejected('passbookPath') && <span className="error-msg">This document was rejected.</span>}
+                                    {isFieldRejected('documentFilePath') && <span className="error-msg">This document was rejected.</span>}
                                 </div>
                                 <FileInput
-                                    label={`Upload ${bank.docImage ? ' (Selected)' : bank.docType}`}
+                                    label={`Upload Bank Document (Passbook/Statement/Cheque)`}
                                     onChange={(file) => handleFileChange('bank', null, 'docImage', file)}
                                     fileName={bank.docImage?.name}
                                     error={errors.bankDoc}
-                                    rejected={isFieldRejected('passbookPath')}
+                                    req
+                                    rejected={isFieldRejected('documentFilePath')}
                                 />
+                                {bank.uploading && <div className="upload-status loading">Uploading...</div>}
+                                {bank.uploadSuccess && <div className="upload-status success">✓ Uploaded</div>}
+                                {bank.uploadError && <div className="upload-status error">⚠ Upload Failed</div>}
                             </div>
 
                             <div className="form-actions">
@@ -1103,27 +1463,38 @@ const EmployeeOnboardingForm = () => {
 
                             <div className="form-actions">
                                 <button type="button" className="btn-secondary" onClick={() => goToStep(4)}><ChevronLeft size={16} /> Back</button>
-                                <button type="submit" className="btn-submit">Submit <CheckCircle size={16} /></button>
+                                <button
+                                    type="submit"
+                                    className="btn-submit"
+                                    disabled={loading}
+                                >
+                                    {loading ? 'Submitting Application...' : 'Submit Application'} <CheckCircle size={16} />
+                                </button>
                             </div>
+                            {loading && (
+                                <div className="upload-warning">
+                                    <div className="spinner-small"></div>
+                                    <span>Please wait while we submit your application...</span>
+                                </div>
+                            )}
                         </div>
                     )}
 
-                    {/* SECTION 6: LIVE PHOTO */}
-                    {/* {step === 6 && (
-                        <div className="form-section animate-fade-in">
-                            <h2>Live Photo Capture</h2>
-                            <p style={{ marginBottom: '1.5rem', color: '#5f6368' }}>Please provide a live photo for verification.</p>
-
-                            <WebcamCapture onCapture={(img) => setLivePhoto(img)} initialImg={livePhoto} />
-
-                            <div className="form-actions">
-                                <button type="button" className="btn-secondary" onClick={() => setStep(5)}><ChevronLeft size={16} /> Back</button>
-                                <button type="submit" className="btn-submit" disabled={!livePhoto}>Submit <CheckCircle size={16} /></button>
+                    {/* SECTION 7: SUCCESS */}
+                    {step === 7 && (
+                        <div className="form-section animate-fade-in success-section">
+                            <div className="success-icon">
+                                <CheckCircle size={64} color="#1e8e3e" />
+                            </div>
+                            <h2>Onboarding Completed</h2>
+                            <p>Your details have been submitted successfully. HR will review your application soon.</p>
+                            <div className="form-actions center">
+                                <button type="button" className="btn-primary" onClick={() => window.location.reload()}>Finish</button>
                             </div>
                         </div>
-                    )} */}
+                    )}
                 </form>
-            </div >
+            </div>
 
             <style>{`
                 .form-container {
@@ -1361,6 +1732,15 @@ const EmployeeOnboardingForm = () => {
                     justify-content: flex-end;
                 }
 
+                .upload-status {
+                    font-size: 0.75rem;
+                    margin-top: 0.25rem;
+                    font-weight: 500;
+                }
+                .upload-status.loading { color: #1a73e8; }
+                .upload-status.success { color: #1e8e3e; }
+                .upload-status.error { color: #d93025; }
+
                 .btn-primary, .btn-secondary, .btn-submit {
                     padding: 0.75rem 1.5rem;
                     border-radius: 4px;
@@ -1434,9 +1814,91 @@ const EmployeeOnboardingForm = () => {
                     margin-bottom: 1rem;
                 }
 
+                .review-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 1.5rem;
+                    background: #f8f9fa;
+                    padding: 1.5rem;
+                    border-radius: 8px;
+                    border: 1px solid #e0e0e0;
+                    margin-bottom: 2rem;
+                }
+
+                .review-item {
+                    font-size: 0.9rem;
+                    color: #202124;
+                }
+
+                .review-section-title {
+                    grid-column: span 2;
+                    font-weight: 700;
+                    color: #673ab7;
+                    font-size: 0.95rem;
+                    border-bottom: 1px solid #e0e0e0;
+                    padding-bottom: 0.25rem;
+                    margin-top: 0.5rem;
+                }
+
+                .review-section-title.full {
+                    grid-column: span 2;
+                }
+
+                .success-text { color: #1e8e3e; font-weight: 600; font-size: 0.8rem; }
+                .error-text { color: #d93025; font-weight: 600; font-size: 0.8rem; }
+
+                .upload-warning {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.75rem;
+                    background: #fff3e0;
+                    padding: 1rem;
+                    border-radius: 4px;
+                    margin-top: 1rem;
+                    color: #e65100;
+                    font-size: 0.85rem;
+                }
+
+                .spinner-small {
+                    width: 16px;
+                    height: 16px;
+                    border: 2px solid #e65100;
+                    border-top: 2px solid transparent;
+                    border-radius: 50%;
+                    animation: spin 0.8s linear infinite;
+                }
+
                 @keyframes spin {
                     0% { transform: rotate(0deg); }
                     100% { transform: rotate(360deg); }
+                }
+
+                .success-section {
+                    text-align: center;
+                    padding: 4rem 2rem;
+                }
+
+                .success-icon {
+                    display: flex;
+                    justify-content: center;
+                    margin-bottom: 1.5rem;
+                }
+
+                .success-section h2 {
+                    color: #1e8e3e;
+                    border-color: #1e8e3e;
+                    font-size: 1.75rem;
+                }
+
+                .success-section p {
+                    color: #5f6368;
+                    font-size: 1rem;
+                    max-width: 480px;
+                    margin: 0 auto 2rem;
+                }
+
+                .form-actions.center {
+                    justify-content: center;
                 }
 
                 @media (max-width: 600px) {
@@ -1483,6 +1945,7 @@ const FileInput = ({ label, onChange, fileName, req, error, rejected }) => {
                     type="file"
                     ref={fileRef}
                     style={{ display: 'none' }}
+                    accept="image/*"
                     onChange={(e) => onChange(e.target.files[0])}
                 />
                 <Upload size={18} style={{ marginBottom: '0.25rem' }} />

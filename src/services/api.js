@@ -1,5 +1,6 @@
 import { API_BASE_URL as rawBaseUrl } from '../config/api';
 
+<<<<<<< HEAD
 // Use relative path in development to go through Vite proxy → avoids CORS
 // In production it will use whatever is set in config (full URL or /api)
 const API_BASE_URL = import.meta.env.DEV ? '/api' : rawBaseUrl;
@@ -47,6 +48,15 @@ class ApiService {
                     }
                 }
                 return null;
+=======
+class ApiService {
+    async request(endpoint, method = 'GET', data = null) {
+        try {
+            const isFormData = data instanceof FormData;
+            const options = {
+                method,
+                headers: {}
+>>>>>>> 62ebbba (commit)
             };
 
             const idVal = ext(['id', 'pk', 'uid']);
@@ -79,6 +89,50 @@ class ApiService {
             } else {
                 i = start + 50; // Jump ahead to next potential object
             }
+<<<<<<< HEAD
+=======
+
+            if (method !== 'GET' && data) {
+                if (isFormData) {
+                    options.body = data;
+                    // 🔥 CRITICAL: Force-remove Content-Type to strip charset
+                    delete options.headers['Content-Type'];
+                } else {
+                    options.body = JSON.stringify(data);
+                }
+            }
+
+            const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+            const response = await fetch(url, options);
+
+            if (!response.ok) {
+                let errorMessage = `HTTP Error: ${response.status}`;
+                let respText = "";
+                try {
+                    respText = await response.text();
+                    const errorData = JSON.parse(respText);
+                    errorMessage = errorData.message || JSON.stringify(errorData);
+                } catch (e) {
+                    errorMessage = respText || errorMessage;
+                }
+                throw new Error(errorMessage);
+            }
+
+            if (response.status === 204) return null;
+
+            const text = await response.text();
+            if (!text) return null;
+
+            try {
+                const json = JSON.parse(text.trim());
+                return json && json.data !== undefined ? json.data : json;
+            } catch (e) {
+                return text;
+            }
+        } catch (error) {
+            console.error(`API Error (${endpoint}):`, error);
+            throw error;
+>>>>>>> 62ebbba (commit)
         }
 
         const unique = {};
@@ -187,7 +241,10 @@ class ApiService {
         return data && data.data !== undefined ? data.data : data;
     }
 
+<<<<<<< HEAD
     // ---------- GENERIC ----------
+=======
+>>>>>>> 62ebbba (commit)
     get(endpoint) { return this.request(endpoint); }
     post(endpoint, data) { return this.request(endpoint, 'POST', data); }
     put(endpoint, data) { return this.request(endpoint, 'PUT', data); }
@@ -243,6 +300,7 @@ class ApiService {
     deleteEntity(id) { return this.delete(`/entities/${id}`); }
 
     // ---------- EMPLOYEES ----------
+<<<<<<< HEAD
     getEmployees() { return this.get('/employees'); }
     getEmployeeDetail(id) { return this.get(`/employees/${id}`); }
 
@@ -255,6 +313,54 @@ class ApiService {
 
     createEmployee(formData) {
         return this.post('/employees', {
+=======
+    async getEmployees() {
+        console.warn("[API] Using blind-fetch workaround for /employees due to backend recursion bug.");
+        try {
+            const idsToTry = Array.from({ length: 30 }, (_, i) => i + 1);
+            const results = await Promise.all(
+                idsToTry.map(async id => {
+                    try {
+                        const url = `/api/employees/${id}`;
+                        const res = await fetch(url);
+                        if (res.ok) {
+                            const json = await res.json();
+                            return json && json.data !== undefined ? json.data : json;
+                        }
+                    } catch (err) { }
+                    return null;
+                })
+            );
+            return results.filter(emp => emp && (emp.id || emp.employeeId));
+        } catch (e) {
+            console.error("[API] Fallback fetch failed:", e);
+            return [];
+        }
+    }
+
+    getEmployeeDetail(id) {
+        return this.get(`/employees/${id}`);
+    }
+
+    async getEmployeesWithDetails() {
+        const list = await this.getEmployees();
+        const employees = Array.isArray(list) ? list : [];
+        const detailed = await Promise.all(
+            employees.map(async (emp) => {
+                try {
+                    const detail = await this.get(`/employees/${emp.id || emp.employeeId || 1}`);
+                    return { ...emp, ...detail };
+                } catch (e) {
+                    return emp;
+                }
+            })
+        );
+        return detailed;
+    }
+
+    createEmployee(formData) {
+        return this.post('/employees/employees', {
+>>>>>>> 62ebbba (commit)
             fullName: formData.name,
             dept: formData.department,
             entity: formData.entity,
@@ -264,7 +370,11 @@ class ApiService {
             dateOfBirth: formData.dateOfBirth,
             email: formData.email,
             phone: formData.phone,
+<<<<<<< HEAD
             status: formData.status || "ONBOARDING"
+=======
+            status: formData.status || 'ONBOARDING'
+>>>>>>> 62ebbba (commit)
         });
     }
 
@@ -292,7 +402,7 @@ class ApiService {
     }
 
     getOnboardingByToken(token) {
-        return this.get(`/onboarding/detail?token=${encodeURIComponent(token)}`);
+        return this.get(`/onboarding/get-onboarding-by-token?token=${token}`);
     }
 
     reviewOnboarding(data, token) {
@@ -317,6 +427,7 @@ class ApiService {
 
     getOnboardingDetail(id) { return this.get(`/onboarding/${id}`); }
 
+<<<<<<< HEAD
     rejectOnboardingDocument(employeeId, entityType, entityId, remarks) {
         return this.post('/onboarding/reject-document', {
             employeeId,
@@ -324,6 +435,10 @@ class ApiService {
             entityId,
             remarks: remarks || ''
         });
+=======
+    rejectOnboardingDocument(employeeId, entityType, entityId) {
+        return this.post('/onboarding/reject-document', { employeeId, entityType, entityId });
+>>>>>>> 62ebbba (commit)
     }
 
     // ---------- VENDORS ----------
@@ -360,7 +475,6 @@ class ApiService {
 
     // ---------- ASSETS ----------
     getAssets() { return this.get('/assets'); }
-
     async createAsset(formData) {
         const data = new FormData();
         data.append('assetName', formData.assetName || formData.name);
@@ -384,6 +498,7 @@ class ApiService {
         data.append('returnDate', formData.returnDate || '');
         data.append('agreementNumber', formData.agreementNumber || '');
         data.append('securityDeposit', formData.securityDeposit || '');
+<<<<<<< HEAD
 
         if (formData.customFields) {
             data.append('customFields', JSON.stringify(formData.customFields));
@@ -391,6 +506,10 @@ class ApiService {
         if (formData.photoFiles) {
             formData.photoFiles.forEach(file => data.append('files', file));
         }
+=======
+        if (formData.customFields) data.append('customFields', JSON.stringify(formData.customFields));
+        if (formData.photoFiles) formData.photoFiles.forEach(file => data.append('files', file));
+>>>>>>> 62ebbba (commit)
         return this.post('/assets', data);
     }
 
@@ -424,9 +543,13 @@ class ApiService {
     }
 
     deleteAsset(id) { return this.delete(`/assets/${id}`); }
+    activateEmployee(id) { return this.patch(`/employees/${id}/activate`, {}); }
+    deactivateEmployee(id) { return this.patch(`/employees/${id}/deactivate`, {}); }
 
-    activateEmployee(id) {
-        return this.patch(`/employees/${id}/activate`, {});
+    getFileUrl(path) {
+        if (!path) return null;
+        const cleanPath = String(path).replace(/\\/g, '/').replace(/^\/+/, '');
+        return `${API_BASE_URL}/${cleanPath}`;
     }
 }
 

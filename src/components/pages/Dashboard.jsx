@@ -137,19 +137,21 @@ const Dashboard = () => {
         }
 
         .page-header h1 {
-          font-size: 1.5rem;
+          font-size: 1.75rem;
           font-weight: 700;
           color: var(--text-main);
+          letter-spacing: -0.02em;
+          margin-bottom: 0.25rem;
         }
 
         .page-header p {
           color: var(--text-muted);
-          font-size: 0.875rem;
+          font-size: 0.9rem;
         }
 
         .kpi-grid {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 1.25rem;
           margin-bottom: 2rem;
         }
@@ -158,12 +160,23 @@ const Dashboard = () => {
           display: flex;
           align-items: center;
           gap: 1rem;
+          border-radius: 12px;
+          border: 1px solid var(--border-color);
+          box-shadow: var(--shadow-sm);
+          background: radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), #ffffff);
+          transition: transform 0.18s ease-out, box-shadow 0.18s ease-out, border-color 0.18s ease-out;
+        }
+
+        .kpi-card:hover {
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-md);
+          border-color: rgba(37, 99, 235, 0.25);
         }
 
         .kpi-icon {
           width: 48px;
           height: 48px;
-          border-radius: 12px;
+          border-radius: 14px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -178,17 +191,18 @@ const Dashboard = () => {
           font-weight: 600;
           color: var(--text-muted);
           text-transform: uppercase;
-          letter-spacing: 0.025em;
+          letter-spacing: 0.06em;
         }
 
         .kpi-value-row {
           display: flex;
           align-items: baseline;
           gap: 0.75rem;
+          margin-top: 0.25rem;
         }
 
         .kpi-value {
-          font-size: 1.25rem;
+          font-size: 1.4rem;
           font-weight: 700;
           color: var(--text-main);
         }
@@ -198,6 +212,7 @@ const Dashboard = () => {
           font-weight: 600;
           display: flex;
           align-items: center;
+          gap: 0.25rem;
         }
 
         .kpi-trend.up { color: var(--success); }
@@ -205,8 +220,13 @@ const Dashboard = () => {
 
         .dashboard-content-grid {
           display: grid;
-          grid-template-columns: 1fr;
-          gap: 1.25rem;
+          grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+          gap: 1.5rem;
+          align-items: flex-start;
+        }
+
+        .recent-activity {
+          grid-column: 1 / -1;
         }
 
         .card-header {
@@ -267,6 +287,7 @@ const Dashboard = () => {
           align-items: center;
           gap: 1.5rem;
           margin-top: 0.25rem;
+          flex-wrap: wrap;
         }
 
         .activity-time {
@@ -301,11 +322,6 @@ const Dashboard = () => {
           color: var(--text-muted);
         }
 
-        .activity-time {
-          font-size: 0.75rem;
-          color: var(--text-muted);
-        }
-
         .health-stats {
           display: flex;
           flex-direction: column;
@@ -325,7 +341,21 @@ const Dashboard = () => {
         }
 
         @media (max-width: 1024px) {
+          .kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
           .dashboard-content-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .recent-activity {
+            grid-column: 1;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .kpi-grid {
             grid-template-columns: 1fr;
           }
         }

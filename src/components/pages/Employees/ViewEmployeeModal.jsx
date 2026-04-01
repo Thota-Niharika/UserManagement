@@ -1,7 +1,12 @@
 import React from 'react';
 import { X, User as UserIcon, Building2, Mail, Calendar, Phone, ShieldCheck, Tag, Briefcase, MapPin, CheckCircle2, XCircle, Eye, FileText } from 'lucide-react';
+<<<<<<< HEAD
 import { normalizeEmployee, getFileUrl } from '../../../utils/normalizeEmployee';
 import { buildFileUrl } from '../../../utils/file';
+=======
+import { normalizeEmployee } from '../../../utils/normalizeEmployee';
+import { buildFileUrl, buildAbsoluteFileUrl } from '../../../utils/file';
+>>>>>>> 62ebbba (commit)
 import { API_BASE_URL } from '../../../config/api';
 
 const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocument }) => {
@@ -18,6 +23,19 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
             }
             console.log("[DEBUG] PAN Number:", normalized.panNumber, "| Aadhar Number:", normalized.aadharNumber);
             console.log("[DEBUG] Identity Proofs Array:", normalized.identityProofs);
+            console.log("[DEBUG] File Paths:", {
+                photoPath: normalized.photoPath,
+                panPath: normalized.panPath,
+                aadharPath: normalized.aadharPath,
+                passbookPath: normalized.passbookPath,
+                photoUrl: normalized.photoPath ? buildFileUrl(normalized.photoPath) : 'NO_PATH',
+                panUrl: normalized.panPath ? buildFileUrl(normalized.panPath) : 'NO_PATH',
+            });
+            if (normalized.identityProofs) {
+                normalized.identityProofs.forEach((p, i) => {
+                    console.log(`[DEBUG] Proof[${i}]:`, { type: p.type || p.proofType, filePath: p.filePath, url: p.filePath ? buildFileUrl(p.filePath) : 'NO_PATH' });
+                });
+            }
         }
     }, [isOpen, employee]);
 
@@ -26,48 +44,19 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
     // Normalize the employee to ensure identityProofs is always a proper array
     const emp = normalizeEmployee(employee);
 
-    const handleViewDocument = async (url) => {
+    const handleViewDocument = (url) => {
         if (!url) return;
 
-        // If it's a data URI or blob, open it directly
+        // If it's a data URI or blob, open     it directly
         if (url.startsWith('data:') || url.startsWith('blob:')) {
             window.open(url, '_blank');
             return;
         }
 
-        try {
-            // Scout the file existence
-            const response = await fetch(url, { method: 'HEAD' });
-            if (response.ok) {
-                window.open(url, '_blank');
-            } else {
-                // Extract relative path
-                const parts = url.split(/[/\\]/);
-                const relativePath = parts.pop();
-
-                // Try alternate endpoint resolution via simple path reversal
-                let fallbackUrl = '';
-                if (url.includes('/onboarding/files/')) {
-                    fallbackUrl = `${API_BASE_URL}/files/${relativePath}`;
-                } else {
-                    fallbackUrl = `${API_BASE_URL}/onboarding/files/${relativePath}`;
-                }
-
-                if (fallbackUrl && fallbackUrl !== url) {
-                    const fbResponse = await fetch(fallbackUrl, { method: 'HEAD' });
-                    if (fbResponse.ok) {
-                        window.open(fallbackUrl, '_blank');
-                    } else {
-                        window.open(url, '_blank'); // fallback to original if both fail
-                    }
-                } else {
-                    window.open(url, '_blank');
-                }
-            }
-        } catch (e) {
-            console.error('[ViewEmployeeModal] Failed to scout file, opening directly:', e);
-            window.open(url, '_blank');
-        }
+        // Use absolute URL to prevent SPA router from intercepting
+        // Relative URLs like /api/files/... get caught by React Router in new tabs
+        const absoluteUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+        window.open(absoluteUrl, '_blank');
     };
 
     // hyper-robust: case-insensitive and substring match
@@ -82,13 +71,18 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
     };
 
     const renderDocCard = (label, docOrPath, fieldKey) => {
-        const isStrPath = (v) => typeof v === 'string' && (v.includes('/') || v.includes('\\') || v.includes('.'));
+        const isStrPath = (v) => typeof v === 'string' && (v.includes('/') || v.includes('\\') || v.includes('.')) && v !== 'NOT_UPLOADED';
+        const isValidPath = (v) => v && typeof v === 'string' && v !== 'NOT_UPLOADED' && v !== 'null' && v !== 'undefined' && v.length > 1;
 
         let path = isStrPath(docOrPath) ? docOrPath : null;
         if (!path && docOrPath && typeof docOrPath === 'object') {
-            path = docOrPath.filePath || docOrPath.path || docOrPath.certificatePath || docOrPath.url ||
+            const raw = docOrPath.filePath || docOrPath.path || docOrPath.certificatePath || docOrPath.url ||
                 Object.values(docOrPath).find(isStrPath);
+            path = isValidPath(raw) ? raw : null;
         }
+
+        // Sanitize: treat NOT_UPLOADED and similar as missing
+        if (!isValidPath(path)) path = null;
 
         if (!path) {
             return (
@@ -120,48 +114,25 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                             onLoad={(e) => { e.target.parentElement.classList.remove('doc-loading'); }}
                             onError={(e) => {
                                 const target = e.target;
+                                if (!target) return;
                                 const errState = target.dataset.errorState || '0';
 
-                                const showErrorOverlay = (t) => {
-                                    t.style.display = 'none';
-                                    if (!t.parentElement.querySelector('.error-overlay')) {
-                                        t.parentElement.classList.add('doc-load-failed');
-                                        const errorIcon = document.createElement('div');
-                                        errorIcon.className = 'error-overlay';
-                                        errorIcon.innerHTML = '<span>⚠️ Load Failed</span>';
-                                        t.parentElement.appendChild(errorIcon);
-                                    }
-                                };
-
                                 if (errState === '0') {
-                                    const currentSrc = target.src;
-                                    const pathParts = currentSrc.split(/[/\\]/);
-                                    const filename = pathParts.pop();
-                                    const hasFolder = pathParts.some(p => p !== '' && p !== 'api' && p !== 'files' && p !== 'onboarding' && p !== 'localhost:5174' && p !== 'localhost:5173');
-
-                                    if (!hasFolder) {
-                                        // Shallow path (just a filename) - likely missing test data. 
-                                        // Don't retry alternate endpoints to avoid extra console noise.
-                                        showErrorOverlay(target);
-                                        return;
-                                    }
-
-                                    // First failure for a structured path — try the alternate API endpoint
                                     target.dataset.errorState = '1';
-                                    let relativePath = '';
+                                    const currentSrc = target.src || '';
+                                    const filename = currentSrc.split(/[/\\]/).pop();
+
                                     if (currentSrc.includes('/onboarding/files/')) {
-                                        relativePath = currentSrc.split('/onboarding/files/').pop();
-                                        target.src = `${API_BASE_URL}/files/${relativePath}`;
-                                    } else if (currentSrc.includes('/files/')) {
-                                        relativePath = currentSrc.split('/files/').pop();
-                                        target.src = `${API_BASE_URL}/onboarding/files/${relativePath}`;
+                                        target.src = `${API_BASE_URL}/files/${filename}`;
                                     } else {
-                                        showErrorOverlay(target);
+                                        target.src = `${API_BASE_URL}/onboarding/files/${filename}`;
                                     }
                                 } else {
-                                    // Second failure — both endpoints failed, show error
-                                    // console.warn('[ViewEmployeeModal] Both endpoints failed for:', target.src);
-                                    showErrorOverlay(target);
+                                    target.src = '/no-image.png';
+                                    target.style.objectFit = 'contain';
+                                    target.style.padding = '10px';
+                                    const parent = target.parentElement;
+                                    if (parent) parent.classList.add('doc-fallback-shown');
                                 }
                             }}
                         />
@@ -209,7 +180,7 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                 <div className="modal-header-banner">
                     <div className="header-info">
                         <div className="profile-badge">
-                            {emp.photoPath ? (() => {
+                            {emp.photoPath && emp.photoPath !== "NOT_UPLOADED" ? (() => {
                                 const photoUrl = buildFileUrl(emp.photoPath);
                                 // TEMPORARY TEST: hardcode to confirm path resolution vs backend issue
                                 // const photoUrl = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200';
@@ -220,33 +191,35 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                         alt={emp.name}
                                         onError={(e) => {
                                             const target = e.target;
+<<<<<<< HEAD
                                             const photoErrState = target.dataset.photoErrState || '0';
+=======
+                                            if (!target) return;
+                                            const photoErrState = target.dataset.photoErrState || '0';
+
+>>>>>>> 62ebbba (commit)
                                             if (photoErrState === '0') {
-                                                const currentSrc = target.src;
-                                                const pathParts = currentSrc.split(/[/\\]/);
-                                                const filename = pathParts.pop();
-                                                const hasFolder = pathParts.some(p => p !== '' && p !== 'api' && p !== 'files' && p !== 'onboarding' && p !== 'localhost:5174' && p !== 'localhost:5173');
-
-                                                if (!hasFolder) {
-                                                    // Shallow path - don't retry. Show initials.
-                                                    target.style.display = 'none';
-                                                    target.parentElement.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
-                                                    return;
-                                                }
-
                                                 target.dataset.photoErrState = '1';
-                                                const match = currentSrc.match(/\/(?:onboarding\/)?files\/(.+)$/);
-                                                const relativePath = match ? match[1] : '';
+                                                const currentSrc = target.src || '';
+                                                const filename = currentSrc.split(/[/\\]/).pop();
 
                                                 if (currentSrc.includes('/onboarding/files/')) {
-                                                    target.src = `${API_BASE_URL}/files/${relativePath}`;
+                                                    target.src = `${API_BASE_URL}/files/${filename}`;
                                                 } else {
-                                                    target.src = `${API_BASE_URL}/onboarding/files/${relativePath}`;
+                                                    target.src = `${API_BASE_URL}/onboarding/files/${filename}`;
                                                 }
                                             } else {
-                                                // Both endpoints failed — show initials fallback
+                                                // Fail gracefully to initials
                                                 target.style.display = 'none';
-                                                target.parentElement.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
+                                                const parent = target.parentElement;
+                                                if (parent) {
+                                                    parent.innerText = (emp.name || '').split(' ').map(n => n[0]).join('');
+                                                    parent.style.display = 'flex';
+                                                    parent.style.alignItems = 'center';
+                                                    parent.style.justifyContent = 'center';
+                                                    parent.style.fontSize = '1.5rem';
+                                                    parent.style.background = 'rgba(255,255,255,0.2)';
+                                                }
                                             }
                                         }}
                                         style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
@@ -371,8 +344,8 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                     <div>
                                         <label>PAN Number</label>
                                         <span className="font-mono text-primary">{emp.panNumber || '-'}</span>
-                                        {emp.panPath && (
-                                            <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(emp.panPath), '_blank'); }}>
+                                        {emp.panPath && emp.panPath !== "NOT_UPLOADED" && (
+                                            <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(emp.panPath)); }}>
                                                 <Eye size={12} /> View Proof
                                             </a>
                                         )}
@@ -383,8 +356,13 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                     <div>
                                         <label>Aadhar Number</label>
                                         <span className="font-mono text-primary">{emp.aadharNumber || '-'}</span>
+<<<<<<< HEAD
                                         {emp.aadharPath && (
                                             <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(buildFileUrl(emp.aadharPath), '_blank'); }}>
+=======
+                                        {emp.aadharPath && emp.aadharPath !== "NOT_UPLOADED" && (
+                                            <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(emp.aadharPath)); }}>
+>>>>>>> 62ebbba (commit)
                                                 <Eye size={12} /> View Proof
                                             </a>
                                         )}
@@ -609,13 +587,18 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                                 <strong>{emp.ssc.institutionName}</strong>
                                                 <span>Year: {emp.ssc.passoutYear} | {emp.ssc.percentageCgpa}%</span>
                                                 {emp.ssc.hallTicketNo && <span className="text-xs text-muted">ID: {emp.ssc.hallTicketNo}</span>}
-                                                {emp.ssc.certificatePath && (
-                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(emp.ssc.certificatePath), '_blank'); }}>
+                                                {emp.ssc.certificatePath && emp.ssc.certificatePath !== "NOT_UPLOADED" && (
+                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(emp.ssc.certificatePath)); }}>
                                                         <Eye size={12} /> View Certificate
                                                     </a>
                                                 )}
+<<<<<<< HEAD
                                                 {/* {emp.ssc.marksMemoPath && (
                                                     <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(emp.ssc.marksMemoPath), '_blank'); }}>
+=======
+                                                {emp.ssc.marksMemoPath && emp.ssc.marksMemoPath !== "NOT_UPLOADED" && (
+                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(emp.ssc.marksMemoPath)); }}>
+>>>>>>> 62ebbba (commit)
                                                         <Eye size={12} /> View Marks Memo
                                                     </a>
                                                 )} */}
@@ -629,13 +612,18 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                                 <strong>{emp.intermediate.institutionName}</strong>
                                                 <span>Year: {emp.intermediate.passoutYear} | {emp.intermediate.percentageCgpa}%</span>
                                                 {emp.intermediate.hallTicketNo && <span className="text-xs text-muted">ID: {emp.intermediate.hallTicketNo}</span>}
-                                                {emp.intermediate.certificatePath && (
-                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(emp.intermediate.certificatePath), '_blank'); }}>
+                                                {emp.intermediate.certificatePath && emp.intermediate.certificatePath !== "NOT_UPLOADED" && (
+                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(emp.intermediate.certificatePath)); }}>
                                                         <Eye size={12} /> View Certificate
                                                     </a>
                                                 )}
+<<<<<<< HEAD
                                                 {/* {emp.intermediate.marksMemoPath && (
                                                     <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(emp.intermediate.marksMemoPath), '_blank'); }}>
+=======
+                                                {emp.intermediate.marksMemoPath && emp.intermediate.marksMemoPath !== "NOT_UPLOADED" && (
+                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(emp.intermediate.marksMemoPath)); }}>
+>>>>>>> 62ebbba (commit)
                                                         <Eye size={12} /> View Marks Memo
                                                     </a>
                                                 )} */}
@@ -649,13 +637,13 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                                 <strong>{emp.graduation.institutionName}</strong>
                                                 <span>Year: {emp.graduation.passoutYear} | {emp.graduation.percentageCgpa}%</span>
                                                 {emp.graduation.hallTicketNo && <span className="text-xs text-muted">ID: {emp.graduation.hallTicketNo}</span>}
-                                                {emp.graduation.certificatePath && (
-                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(emp.graduation.certificatePath), '_blank'); }}>
+                                                {emp.graduation.certificatePath && emp.graduation.certificatePath !== "NOT_UPLOADED" && (
+                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(emp.graduation.certificatePath)); }}>
                                                         <Eye size={12} /> View Certificate
                                                     </a>
                                                 )}
-                                                {emp.graduation.marksMemoPath && (
-                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(emp.graduation.marksMemoPath), '_blank'); }}>
+                                                {emp.graduation.marksMemoPath && emp.graduation.marksMemoPath !== "NOT_UPLOADED" && (
+                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(emp.graduation.marksMemoPath)); }}>
                                                         <Eye size={12} /> View Marks Memo
                                                     </a>
                                                 )}
@@ -670,13 +658,13 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                                 <span>Year: {pg.passoutYear} | {pg.percentageCgpa}%</span>
                                                 {pg.hallTicketNo && <span className="text-xs text-muted">ID: {pg.hallTicketNo}</span>}
                                                 <div className="card-actions-inline">
-                                                    {pg.certificatePath && (
-                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(pg.certificatePath), '_blank'); }}>
+                                                    {pg.certificatePath && pg.certificatePath !== "NOT_UPLOADED" && (
+                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(pg.certificatePath)); }}>
                                                             <Eye size={12} /> View Certificate
                                                         </a>
                                                     )}
-                                                    {pg.marksMemoPath && (
-                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(pg.marksMemoPath), '_blank'); }}>
+                                                    {pg.marksMemoPath && pg.marksMemoPath !== "NOT_UPLOADED" && (
+                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(pg.marksMemoPath)); }}>
                                                             <Eye size={12} /> View Marks Memo
                                                         </a>
                                                     )}
@@ -690,8 +678,8 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                             <div className="card-content">
                                                 <strong>{cert.instituteName || cert.institute}</strong>
                                                 <span>Number: {cert.certificateNumber}</span>
-                                                {cert.certificatePath && (
-                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(cert.certificatePath), '_blank'); }}>
+                                                {cert.certificatePath && cert.certificatePath !== "NOT_UPLOADED" && (
+                                                    <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(cert.certificatePath)); }}>
                                                         <Eye size={12} /> View Certificate
                                                     </a>
                                                 )}
@@ -715,13 +703,13 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                                     <span>{int.joiningDate} to {int.relievingDate}</span>
                                                 </div>
                                                 <div className="card-actions-inline">
-                                                    {int.offerLetterPath && (
-                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(int.offerLetterPath), '_blank'); }}>
+                                                    {int.offerLetterPath && int.offerLetterPath !== "NOT_UPLOADED" && (
+                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(int.offerLetterPath)); }}>
                                                             <Eye size={12} /> Offer Letter
                                                         </a>
                                                     )}
-                                                    {int.experienceCertificatePath && (
-                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(int.experienceCertificatePath), '_blank'); }}>
+                                                    {int.experienceCertificatePath && int.experienceCertificatePath !== "NOT_UPLOADED" && (
+                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(int.experienceCertificatePath)); }}>
                                                             <Eye size={12} /> Exp Certificate
                                                         </a>
                                                     )}
@@ -743,23 +731,23 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                                 <strong>{work.companyName}</strong>
                                                 <span className="text-muted">{work.yearsOfExp}</span>
                                                 <div className="card-actions-inline">
-                                                    {work.offerLetterPath && (
-                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(work.offerLetterPath), '_blank'); }}>
+                                                    {work.offerLetterPath && work.offerLetterPath !== "NOT_UPLOADED" && (
+                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(work.offerLetterPath)); }}>
                                                             <Eye size={12} /> Offer
                                                         </a>
                                                     )}
-                                                    {work.relievingLetterPath && (
-                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(work.relievingLetterPath), '_blank'); }}>
+                                                    {work.relievingLetterPath && work.relievingLetterPath !== "NOT_UPLOADED" && (
+                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(work.relievingLetterPath)); }}>
                                                             <Eye size={12} /> Relieving
                                                         </a>
                                                     )}
-                                                    {work.payslipsPath && (
-                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(work.payslipsPath), '_blank'); }}>
+                                                    {work.payslipsPath && work.payslipsPath !== "NOT_UPLOADED" && (
+                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(work.payslipsPath)); }}>
                                                             <Eye size={12} /> Payslips
                                                         </a>
                                                     )}
-                                                    {work.experienceCertificatePath && (
-                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); window.open(getFileUrl(work.experienceCertificatePath), '_blank'); }}>
+                                                    {work.experienceCertificatePath && work.experienceCertificatePath !== "NOT_UPLOADED" && (
+                                                        <a href="#" className="view-cert-link" onClick={(e) => { e.preventDefault(); handleViewDocument(buildFileUrl(work.experienceCertificatePath)); }}>
                                                             <Eye size={12} /> Exp Cert
                                                         </a>
                                                     )}

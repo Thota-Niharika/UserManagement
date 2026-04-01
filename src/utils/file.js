@@ -3,52 +3,100 @@ import { API_BASE_URL as rawBaseUrl } from '../config/api';
 // Use relative path in development to go through Vite proxy
 const API_BASE_URL = import.meta.env.DEV ? '/api' : rawBaseUrl;
 
+// The base URL for serving uploaded files.
+// If your backend serves files at /api/uploads/ set:  VITE_FILE_BASE_URL=http://192.168.1.13:8090/api/uploads
+// If it serves at /uploads/ set:                      VITE_FILE_BASE_URL=http://192.168.1.13:8090/uploads
+// Defaults to the same host as the API + /files/
+const FILE_HOST = (() => {
+    // Strip /api suffix to get bare host
+    const env = import.meta.env.VITE_FILE_BASE_URL;
+    if (env) return env.replace(/\/$/, '');
+    // Fallback: derive from API_BASE_URL
+    const base = (import.meta.env.VITE_API_BASE_URL || API_BASE_URL || '').replace(/\/api$/, '');
+    return `${base}/api/files`;
+})();
+
 /**
- * Universal Image Builder Function
- * - Enforces absolute root-relative paths
- * - Removes redundant /api/ prefixes from the input to prevent doubling
- * - Encodes special characters in filenames
+ * Extract the raw relative filename/path from any form of input:
+ * - plain filename: "img1.png"
+ * - Windows path: "D:/uploads/img1.png"
+ * - any URL with /api/: "http://host/api/files/img1.png"
+ */
+const extractFilename = (pathOrObj) => {
+    if (!pathOrObj) return null;
+    let raw = typeof pathOrObj === 'string'
+        ? pathOrObj
+        : (pathOrObj.filePath || pathOrObj.path || pathOrObj.url || '');
+    if (!raw || typeof raw !== 'string') return null;
+
+    raw = raw.trim();
+    if (raw === 'NOT_UPLOADED' || raw === 'null' || raw === 'undefined') return null;
+    if (raw.startsWith('data:') || raw.startsWith('blob:')) return raw; // passthrough
+
+    // Normalize separators and strip Windows drive letter
+    raw = raw.replace(/\\/g, '/').replace(/^[A-Za-z]:\//, '');
+
+    // Strip full URL prefix (everything up to /api/ or /uploads/)
+    raw = raw.replace(/^https?:\/\/[^/]+/, '');
+
+    // Remove common path prefixes
+    const prefixes = ['api/onboarding/files/', 'api/files/', 'api/uploads/', 'uploads/', 'api/'];
+    raw = raw.replace(/^\/+/, '');
+    for (const prefix of prefixes) {
+        if (raw.startsWith(prefix)) { raw = raw.slice(prefix.length); break; }
+    }
+
+    return raw.replace(/^\/+/, '') || null;
+};
+
+/**
+ * Universal Image Builder Function.
+ * Builds a URL using the configured FILE_HOST endpoint.
  */
 export const buildFileUrl = (pathOrObj) => {
-    if (!pathOrObj) return '/placeholder.png';
+    const filename = extractFilename(pathOrObj);
+    if (!filename) return '/no-image.png';
+    if (filename.startsWith('data:') || filename.startsWith('blob:')) return filename;
 
-    // Extract path if object
-    let rawPath = typeof pathOrObj === 'string' ? pathOrObj : (pathOrObj.filePath || pathOrObj.path || pathOrObj.url || '');
-    if (!rawPath || typeof rawPath !== 'string') return '/placeholder.png';
+    const encoded = filename.split('/').map(seg => encodeURIComponent(seg)).join('/');
+    return `${FILE_HOST}/${encoded}`;
+};
 
-    let cleanPath = rawPath.trim();
+/**
+ * Builds an ABSOLUTE URL for opening files in a new tab.
+ * Relative URLs break in new tabs because the SPA router intercepts them.
+ * This always returns the full backend URL (e.g. http://192.168.1.13:8090/api/files/filename.jpg)
+ */
+export const buildAbsoluteFileUrl = (pathOrObj) => {
+    const filename = extractFilename(pathOrObj);
+    if (!filename) return null;
+    if (filename.startsWith('data:') || filename.startsWith('blob:') || filename.startsWith('http')) return filename;
 
-    // 1. Handle base64 or blob URLs
-    if (cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
+    const encoded = filename.split('/').map(seg => encodeURIComponent(seg)).join('/');
 
-    // 2. Normalize separators (convert all to forward slashes)
-    cleanPath = cleanPath.replace(/\\/g, '/');
-
-    // 3. Handle Windows absolute paths (e.g. "D:/uploads/file.jpg")
-    cleanPath = cleanPath.replace(/^[A-Za-z]:\//, '');
-
-    // 4. Handle full HTTP URLs (strip base if it matches API patterns)
-    if (cleanPath.startsWith('http')) {
-        const urlParts = cleanPath.split('/api/');
-        if (urlParts.length > 1) {
-            cleanPath = urlParts.pop(); // Get everything after /api/
-        }
+    // If FILE_HOST is already absolute, use it directly
+    if (FILE_HOST.startsWith('http')) {
+        return `${FILE_HOST}/${encoded}`;
     }
 
-    // 5. Remove common prefixes to get a pure relative file path
-    cleanPath = cleanPath.replace(/^\/+/, '');
-    const prefixPatterns = ['api/onboarding/files/', 'api/files/', 'uploads/', 'api/'];
-    for (const prefix of prefixPatterns) {
-        if (cleanPath.startsWith(prefix)) {
-            cleanPath = cleanPath.slice(prefix.length);
-            break;
-        }
-    }
-    cleanPath = cleanPath.replace(/^\/+/, '');
+    // Otherwise, derive absolute URL from current page origin
+    // The proxy will forward /api/files/... to the backend
+    return `${window.location.origin}${FILE_HOST}/${encoded}`;
+};
 
-    // 6. Encode path segments (so spaces become %20, etc.)
-    const encodedPath = cleanPath.split('/').map(seg => encodeURIComponent(seg)).join('/');
+/**
+ * Returns a list of all alternative URLs to try for a given filename.
+ * Use this in onError handlers to cycle through fallback endpoints.
+ */
+export const getAltFileUrl = (currentUrl, apiBaseUrl) => {
+    const base = (apiBaseUrl || API_BASE_URL || '').replace(/\/api$/, '');
+    const filename = extractFilename(currentUrl) || currentUrl.split('/').pop();
+    const encoded = encodeURIComponent(filename);
 
-    // 7. Return root-relative API path
-    return `${API_BASE_URL}/onboarding/files/${encodedPath}`;
+    return [
+        `${base}/api/files/${encoded}`,
+        `${base}/api/onboarding/files/${encoded}`,
+        `${base}/api/uploads/${encoded}`,
+        `${base}/uploads/${encoded}`,
+    ].filter(url => url !== currentUrl);
 };

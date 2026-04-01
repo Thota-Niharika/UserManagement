@@ -1,6 +1,6 @@
 import { X, Package, Tag, ArrowRightLeft, MessageSquare, Image as ImageIcon, Camera, User, Building2 } from 'lucide-react';
 import apiService from '../../../services/api';
-import { getFileUrl } from '../../../utils/normalizeEmployee';
+import { buildFileUrl } from '../../../utils/file';
 
 const EditAssetModal = ({ isOpen, onClose, onUpdate, asset }) => {
     const [formData, setFormData] = useState({
@@ -457,7 +457,7 @@ const EditAssetModal = ({ isOpen, onClose, onUpdate, asset }) => {
                                 <div className="photo-upload-grid">
                                     {formData.photos.map((photo, index) => (
                                         <div key={index} className="photo-preview-item">
-                                            <img src={getFileUrl(photo)} alt={`Asset ${index + 1}`} />
+                                            <img src={buildFileUrl(photo)} alt={`Asset ${index + 1}`} />
                                             <button type="button" className="photo-remove" onClick={() => removePhoto(index)}>
                                                 <X size={12} />
                                             </button>

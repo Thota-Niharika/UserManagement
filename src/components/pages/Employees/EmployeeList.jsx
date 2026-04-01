@@ -150,7 +150,7 @@ const EmployeeList = () => {
 
   // Fetch all necessary data
   const fetchData = async () => {
-    const ensureArray = (data) => {
+    const ensureArray = (data, context) => {
       if (Array.isArray(data)) return data;
       if (data && typeof data === 'object') {
         if (Array.isArray(data.data)) return data.data;
@@ -158,32 +158,71 @@ const EmployeeList = () => {
         if (Array.isArray(data.employees)) return data.employees;
         if (Array.isArray(data.employeeList)) return data.employeeList;
       }
+      console.warn(`[DEBUG] ${context} response is not an array:`, data);
       return [];
     };
 
-    // Load everything in parallel
     try {
-      const [deptRes, roleRes, entRes, empRes] = await Promise.all([
-        apiService.getDepartments(),
-        apiService.getRoles(),
-        apiService.getEntities(),
-        apiService.getEmployeesWithDetails()
-      ]);
+      console.log("[DEBUG] Fetching master data from port 8090...");
+      let deptRes, roleRes, entRes, empRes;
+      try {
+        [deptRes, roleRes, entRes, empRes] = await Promise.all([
+          apiService.getDepartments(),
+          apiService.getRoles(),
+          apiService.getEntities(),
+          apiService.getEmployeesWithDetails()
+        ]);
+      } catch (detailError) {
+        console.warn("[DEBUG] Detailed employee fetch failed, trying lightweight fallback...", detailError);
+        try {
+          [deptRes, roleRes, entRes, empRes] = await Promise.all([
+            apiService.getDepartments(),
+            apiService.getRoles(),
+            apiService.getEntities(),
+            apiService.getEmployees()
+          ]);
+        } catch (fallbackError) {
+          console.error("🔥 FATAL: Backend /employees endpoint completely down or recursive:", fallbackError);
+          [deptRes, roleRes, entRes] = await Promise.all([
+            apiService.getDepartments(),
+            apiService.getRoles(),
+            apiService.getEntities()
+          ]);
+          empRes = []; // Return empty array to keep UI alive
+        }
+      }
 
-      const freshDepts = ensureArray(deptRes);
-      const freshRoles = ensureArray(roleRes);
-      const freshEntities = ensureArray(entRes);
-      const freshEmps = ensureArray(empRes);
+      console.log("[DEBUG] Raw employee response:", empRes);
+
+      const freshDepts = ensureArray(deptRes, 'Departments');
+      const freshRoles = ensureArray(roleRes, 'Roles');
+      const freshEntities = ensureArray(entRes, 'Entities');
+      const freshEmps = ensureArray(empRes, 'Employees');
 
       setDepartments(freshDepts);
       setRoles(freshRoles);
       setEntities(freshEntities);
 
       // Pass fresh master lists to normalizeEmployee to avoid state stale-ness
-      setEmployees(freshEmps.map(emp => decorateEmployee(normalizeEmployee(emp, freshDepts, freshRoles, freshEntities), emp)));
+      console.log(`[DEBUG] Normalizing ${freshEmps.length} employees...`);
+      const normalized = freshEmps.map(emp => {
+        const norm = normalizeEmployee(emp, freshDepts, freshRoles, freshEntities);
+        return decorateEmployee(norm, emp);
+      }).filter(Boolean);
+
+      setEmployees(normalized);
+
+      if (freshEmps.length > 0 && normalized.length === 0) {
+        console.error("[DEBUG] Employees were fetched but all failed normalization!");
+      }
 
     } catch (e) {
       console.error('Failed to fetch data:', e);
+      setToast({
+        show: true,
+        message: 'Connection Failed: Please ensure backend is running at 192.168.1.13:8090',
+        type: 'error'
+      });
     }
   };
 
@@ -280,13 +319,13 @@ const EmployeeList = () => {
 
 
   const handleDeleteEmployee = async (id) => {
-    if (window.confirm('Are you sure?')) {
+    if (window.confirm('Are you sure you want to deactivate this employee? Their data will remain but their status will be set to Inactive.')) {
       try {
-        await apiService.deleteEmployee(id);
-        setEmployees(employees.filter(emp => (emp.id || emp.employeeId) !== id));
-        setToast({ show: true, message: 'Employee deleted successfully!', type: 'success' });
+        await apiService.deactivateEmployee(id);
+        fetchData(); // Refresh list to see updated status
+        setToast({ show: true, message: 'Employee deactivated successfully!', type: 'success' });
       } catch (error) {
-        setToast({ show: true, message: 'Failed to delete: ' + error.message, type: 'error' });
+        setToast({ show: true, message: 'Failed to deactivate: ' + error.message, type: 'error' });
       }
     }
   };
@@ -614,7 +653,7 @@ const EmployeeList = () => {
                       <button className="icon-btn-v3" onClick={() => handleEditEmployee(emp)} title="Edit Employee">
                         <Edit3 size={16} />
                       </button>
-                      <button className="icon-btn-v3 danger" onClick={() => handleDeleteEmployee(emp.id || emp.employeeId)} title="Delete Record">
+                      <button className="icon-btn-v3 danger" onClick={() => handleDeleteEmployee(emp.id || emp.employeeId)} title="Deactivate Employee">
                         <Trash2 size={16} />
                       </button>
                     </div>

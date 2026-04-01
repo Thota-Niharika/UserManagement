@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Package, Tag, ArrowRightLeft, MessageSquare, Image as ImageIcon, Camera, User, Building2, FileText, UploadCloud, CheckCircle } from 'lucide-react';
 import apiService from '../../../services/api';
-import { getFileUrl } from '../../../utils/normalizeEmployee';
+import { buildFileUrl } from '../../../utils/file';
 
 const AddAssetModal = ({ isOpen, onClose, onAdd }) => {
     const [formData, setFormData] = useState({
@@ -879,7 +879,7 @@ const AddAssetModal = ({ isOpen, onClose, onAdd }) => {
                                                 <div className="photo-upload-grid-compact">
                                                     {formData.photos.map((photo, index) => (
                                                         <div key={index} className="photo-preview-item-compact">
-                                                            <img src={getFileUrl(photo)} alt="" />
+                                                            <img src={buildFileUrl(photo)} alt="" />
                                                             <button type="button" className="photo-remove" onClick={() => removePhoto(index)}><X size={10} /></button>
                                                         </div>
                                                     ))}

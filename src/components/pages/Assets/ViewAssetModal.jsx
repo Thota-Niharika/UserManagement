@@ -186,7 +186,7 @@ const ViewAssetModal = ({ isOpen, onClose, asset }) => {
                                                     onError={(e) => {
                                                         const target = e.target;
                                                         if (target.dataset.errorState === '1') {
-                                                            target.src = '/placeholder.png';
+                                                            target.src = '/no-image.png';
                                                             target.classList.add('broken-link');
                                                             return;
                                                         }
