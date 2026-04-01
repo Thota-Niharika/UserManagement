@@ -123,6 +123,14 @@ export const normalizeEmployee = (rawEmp) => {
         emp = emp.employee || emp.data || emp.onboarding;
     }
 
+    // Step 2b: Merge sibling onboarding wrapper to root so nested fields (ssc, internships) become accessible
+    if (emp.onboardingForm && typeof emp.onboardingForm === 'object') {
+        emp = { ...emp.onboardingForm, ...emp };
+    } else if (emp.onboarding && typeof emp.onboarding === 'object' && !emp.onboarding.status) {
+        // Only merge if it's actually an onboarding data object, not a string or status
+        emp = { ...emp.onboarding, ...emp };
+    }
+
     // Step 3: Identity Discovery (Array of proofs)
     const identityProofs = Array.isArray(emp?.identityProofs) ? emp.identityProofs : 
                           (Array.isArray(emp?.employee?.identityProofs) ? emp.employee.identityProofs : []);

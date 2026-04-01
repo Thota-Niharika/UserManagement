@@ -17,33 +17,21 @@ const api = axios.create({
 export const safeGet = async (url) => {
   try {
     const res = await api.get(url);
+    const data = res.data;
 
-    // Validate Status
-    if (res.status !== 200 && res.status !== 201) {
-      console.error(`❌ [API] Bad status ${res.status} for ${url}`);
-      return [];
-    }
+    console.log("✅ RAW API RESPONSE:", data); // 👈 ADD THIS
 
-    // Handle string/broken JSON
-    const data = parseIfString(res.data);
+    if (!data) return null;
 
-    // Validate JSON Structure
-    if (!data || typeof data !== "object") {
-      console.warn(`⚠️ [API] Non-JSON or empty response for ${url}:`, data);
-      return [];
-    }
+    if (data.data) return data.data;
+    if (data.content) return data.content;
+    if (data.onboarding) return data.onboarding;
 
-    // Detect backend error payloads (e.g. { error: "msg", status: 500 })
-    if (data.error || (data.status && data.status >= 400)) {
-      console.error(`❌ [API] Backend logic error for ${url}:`, data);
-      return [];
-    }
+    return data;
 
-    // Unwrap Spring Boot "data" or "content" wrappers
-    return data.data !== undefined ? data.data : (data.content !== undefined ? data.content : data);
   } catch (err) {
-    console.error(`❌ [API FAILED] ${url}:`, err.response?.data || err.message);
-    return []; // Return empty array to prevent map() crashes in UI
+    console.error("❌ API ERROR:", err.response?.data || err.message);
+    throw err; // 🔥 CRITICAL FIX (remove return [])
   }
 };
 
