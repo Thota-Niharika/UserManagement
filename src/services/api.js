@@ -28,7 +28,7 @@ export const submitOnboarding = async (dto, files = [], token = null) => {
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 120000,
 });
 
 /**
@@ -219,20 +219,35 @@ const ApiService = {
   // --- ONBOARDING (FINAL CLEAN VERSION) ---
 
   // ✅ ONLY ONE FUNCTION — SINGLE SOURCE OF TRUTH
+  // --- ONBOARDING ---
+
   submitOnboarding: (dto, files, token) => {
     return submitOnboarding(dto, files, token);
   },
 
+  // ✅ FIXED: Now uses path variable (matches what backend expects)
   getOnboardingByToken: async (token) => {
-    if (!token) return null;
+    if (!token) {
+      console.warn("⚠️ getOnboardingByToken called without token");
+      return null;
+    }
+
+    const encodedToken = encodeURIComponent(token);
 
     try {
-      return await safeGet(
-        `/onboarding/get-onboarding-by-token?token=${encodeURIComponent(token)}`
-      );
+      // Primary call - using path parameter (this should fix the 500 error)
+      return await safeGet(`/onboarding/get-onboarding-by-token/${encodedToken}`);
     } catch (err) {
-      console.warn("⚠️ Primary failed, trying fallback...");
-      return safeGet(`/onboarding/details?token=${encodeURIComponent(token)}`);
+      console.warn("⚠️ Path parameter failed:", err.message || err);
+
+      // Optional fallback (if backend also supports query param)
+      try {
+        return await safeGet(`/onboarding/get-onboarding-by-token?token=${encodedToken}`);
+      } catch (fallbackErr) {
+        console.warn("⚠️ Query fallback also failed, trying details endpoint...");
+        // Last resort fallback
+        return safeGet(`/onboarding/details?token=${encodedToken}`);
+      }
     }
   },
 
