@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import apiService from '../../../services/api';
 import Toast from '../../common/Toast';
-import { buildFileUrl } from '../../../utils/file';
+import { buildFileUrl, getAltFileUrl } from '../../../utils/file';
 import { API_BASE_URL } from '../../../config/api';
 
 const EmployeeProfile = () => {
@@ -128,19 +128,18 @@ const EmployeeProfile = () => {
                             onError={(e) => {
                                 const target = e.target;
                                 if (!target) return;
-                                const errState = target.dataset.errorState || '0';
+                                
+                                // Cycle through alternative URLs for resilient loading
+                                const altUrls = getAltFileUrl(target.src);
+                                const lastTried = parseInt(target.dataset.triedIndex || '-1');
+                                const nextIndex = lastTried + 1;
 
-                                if (errState === '0') {
-                                    target.dataset.errorState = '1';
-                                    const currentSrc = target.src || '';
-                                    const filename = currentSrc.split(/[/\\]/).pop();
-
-                                    if (currentSrc.includes('/onboarding/files/')) {
-                                        target.src = `${API_BASE_URL}/files/${filename}`;
-                                    } else {
-                                        target.src = `${API_BASE_URL}/onboarding/files/${filename}`;
-                                    }
+                                if (altUrls && altUrls[nextIndex]) {
+                                    target.dataset.triedIndex = nextIndex;
+                                    target.src = altUrls[nextIndex];
+                                    console.log(`🖼️ [IMAGE FALLBACK] Trying alternate for "${label}":`, altUrls[nextIndex]);
                                 } else {
+                                    // Final fallback to placeholder
                                     target.src = '/no-image.png';
                                     target.style.objectFit = 'contain';
                                     target.style.padding = '10px';
@@ -237,17 +236,15 @@ const EmployeeProfile = () => {
                                         alt={emp.name}
                                         onError={(e) => {
                                             const target = e.target;
-                                            const photoErrState = target.dataset.photoErrState || '0';
-                                            if (photoErrState === '0') {
-                                                target.dataset.photoErrState = '1';
-                                                const currentSrc = target.src || '';
-                                                const filename = currentSrc.split(/[/\\]/).pop();
+                                            
+                                            // Handle profile picture fallback
+                                            const altUrls = getAltFileUrl(target.src);
+                                            const lastTried = parseInt(target.dataset.triedIndex || '-1');
+                                            const nextIndex = lastTried + 1;
 
-                                                if (currentSrc.includes('/onboarding/files/')) {
-                                                    target.src = `${API_BASE_URL}/files/${filename}`;
-                                                } else {
-                                                    target.src = `${API_BASE_URL}/onboarding/files/${filename}`;
-                                                }
+                                            if (altUrls && altUrls[nextIndex]) {
+                                                target.dataset.triedIndex = nextIndex;
+                                                target.src = altUrls[nextIndex];
                                             } else {
                                                 target.style.display = 'none';
                                                 const parent = target.parentElement;

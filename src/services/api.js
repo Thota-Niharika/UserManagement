@@ -1,27 +1,29 @@
+
 import axios from "axios";
 import { API_BASE_URL } from '../config/api';
 import { normalizeEmployee, normalizeEmployeeList } from '../utils/normalizeEmployee';
 import { parseIfString } from '../utils/apiUtils';
 
 // --- CLEAN API EXPORTS ---
-export const submitOnboarding = async (dto, files = [], token = null) => {
-  const formData = new FormData();
+export const submitOnboarding = async (dtoOrFormData, files = [], token = null) => {
+  let payload;
+  let endpoint;
 
-  formData.append("data", new Blob([JSON.stringify(dto)], { type: 'application/json' }));
+  if (dtoOrFormData instanceof FormData) {
+    // 🚀 NEW: Flat FormData built by component
+    payload = dtoOrFormData;
+    endpoint = token ? `/onboarding/submit?token=${encodeURIComponent(token)}` : '/onboarding/submit';
+  } else {
+    // 🏛️ LEGACY: Grouped DTO + Files
+    const formData = new FormData();
+    formData.append("data", JSON.stringify(dtoOrFormData));
+    const fileList = Array.isArray(files) ? files : Object.values(files || {});
+    fileList.forEach((file) => { if (file) formData.append("files", file); });
+    payload = formData;
+    endpoint = token ? `/onboarding/submit?token=${encodeURIComponent(token)}` : "/onboarding/submit";
+  }
 
-  const fileList = Array.isArray(files)
-    ? files
-    : Object.values(files || {});
-
-  fileList.forEach((file) => {
-    if (file) formData.append("files", file);
-  });
-
-  const endpoint = token
-    ? `/onboarding/submit?token=${encodeURIComponent(token)}`
-    : "/onboarding/submit";
-
-  return safePost(endpoint, formData);
+  return safePost(endpoint, payload);
 };
 
 // ─── HARDENED API CLIENT ──────────────────────────────────────────
@@ -38,9 +40,9 @@ const api = axios.create({
 export const safeGet = async (url) => {
   try {
     const res = await api.get(url);
-    const data = res.data;
+    const data = parseIfString(res.data);
 
-    console.log("✅ RAW API RESPONSE:", data); // 👈 ADD THIS
+    console.log("✅ RAW API RESPONSE:", data);
 
     if (!data) return null;
 
@@ -174,8 +176,37 @@ const ApiService = {
     return normalizeEmployeeList(raw);
   },
   getEmployeeDetail: async (id) => {
-    const raw = await safeGet(`/employees/${id}`);
-    return normalizeEmployee(raw);
+    try {
+      // 🚀 COMPOSITE FETCH: Get core record AND onboarding details
+      // Promise.allSettled ensures if onboarding is missing (404), the profile still shows basic info.
+      const [empRes, onboardingRes] = await Promise.allSettled([
+        api.get(`/employees/${id}`),
+        api.get(`/onboarding/${id}`)
+      ]);
+
+      const rawEmp = empRes.status === 'fulfilled' ? empRes.value.data : null;
+      const rawOnboarding = onboardingRes.status === 'fulfilled' ? onboardingRes.value.data : null;
+
+      if (!rawEmp) throw new Error("Employee record not found");
+
+      // Extract the payload (handles wrapped data: { data: {...} })
+      const employee = rawEmp.data || rawEmp;
+      const onboarding = rawOnboarding?.data || rawOnboarding;
+
+      // 💉 MERGE: Inject onboarding data so normalizer can find it
+      const composite = {
+        ...employee,
+        onboardingForm: onboarding || employee.onboardingForm || null,
+        // Fallback for direct field access
+        ...(onboarding || {})
+      };
+
+      console.log("🧩 [COMPOSITE PROFILE] Merged Data:", composite);
+      return normalizeEmployee(composite);
+    } catch (err) {
+      console.error("❌ Failed to fetch complete profile:", err);
+      throw err;
+    }
   },
   createEmployee: async (formData) => {
     // 🛡️ SANITIZATION: Empty strings for dates cause 500s in Spring Boot
@@ -290,58 +321,42 @@ const ApiService = {
 
   // --- ASSETS ---
   getAssets: () => safeGet('/assets'),
-  createAsset: async (formData) => {
+  createAsset: async (formDataOrObject) => {
+    if (formDataOrObject instanceof FormData) {
+      // 🚀 NEW: Flat FormData built by component
+      return safePost('/assets', formDataOrObject);
+    }
+
+    // 🏛️ LEGACY: Field-by-field manual build
     const data = new FormData();
-    data.append('assetName', formData.assetName || formData.name);
-    data.append('assetTag', formData.assetTag || formData.tag);
-    data.append('receiverName', formData.receiverName || '');
-    data.append('exchangeType', formData.exchangeType || 'Issue');
-    data.append('vendorId', formData.vendorId || formData.vendor?.vendorId || '');
-    data.append('remarks', formData.remarks || '');
-    data.append('companyName', formData.companyName || '');
-    data.append('generation', formData.generation || '');
-    data.append('ram', formData.ram || '');
-    data.append('hardDisk', formData.hardDisk || '');
-    data.append('procurementType', formData.procurementType || 'Purchasing');
-    data.append('purchaseDate', formData.purchaseDate || '');
-    data.append('poNumber', formData.poNumber || '');
-    data.append('invoiceNumber', formData.invoiceNumber || '');
-    data.append('purchaseCost', formData.purchaseCost || '');
-    data.append('warrantyPeriod', formData.warrantyPeriod || '');
-    data.append('vendorContact', formData.vendorContact || '');
-    data.append('deliveryDate', formData.deliveryDate || '');
-    data.append('returnDate', formData.returnDate || '');
-    data.append('agreementNumber', formData.agreementNumber || '');
-    data.append('securityDeposit', formData.securityDeposit || '');
-    if (formData.customFields) data.append('customFields', JSON.stringify(formData.customFields));
-    if (formData.photoFiles) formData.photoFiles.forEach(file => data.append('files', file));
+    data.append('asset_name', formDataOrObject.assetName || formDataOrObject.name);
+    data.append('asset_tag', formDataOrObject.assetTag || formDataOrObject.tag);
+    data.append('receiver_name', formDataOrObject.receiverName || '');
+    data.append('exchange_type', formDataOrObject.exchangeType || 'Issue');
+    data.append('vendor_id', formDataOrObject.vendorId || formDataOrObject.vendor?.vendorId || '');
+    data.append('remarks', formDataOrObject.remarks || '');
+    if (formDataOrObject.customFields) data.append('custom_fields', JSON.stringify(formDataOrObject.customFields));
+    if (formDataOrObject.photoFiles) formDataOrObject.photoFiles.forEach(file => data.append('photo_files', file));
+    if (formDataOrObject.invoiceFile) data.append('invoice_file', formDataOrObject.invoiceFile);
+    
     return safePost('/assets', data);
   },
-  updateAsset: (id, formData) => {
+  updateAsset: (id, formDataOrObject) => {
+    if (formDataOrObject instanceof FormData) {
+      // 🚀 NEW: Flat FormData update
+      return safePatch(`/assets/${id}`, formDataOrObject);
+    }
+
+    // 🏛️ LEGACY: JSON Object
     const payload = {
-      assetName: formData.assetName || formData.name,
-      assetTag: formData.assetTag || formData.tag,
-      receiverName: formData.receiverName || '',
-      exchangeType: formData.exchangeType || 'Issue',
-      remarks: formData.remarks || '',
-      companyName: formData.companyName || '',
-      generation: formData.generation || '',
-      ram: formData.ram || '',
-      hardDisk: formData.hardDisk || '',
-      procurementType: formData.procurementType || 'Purchasing',
-      purchaseDate: formData.purchaseDate || '',
-      poNumber: formData.poNumber || '',
-      invoiceNumber: formData.invoiceNumber || '',
-      purchaseCost: formData.purchaseCost || '',
-      warrantyPeriod: formData.warrantyPeriod || '',
-      vendorContact: formData.vendorContact || '',
-      deliveryDate: formData.deliveryDate || '',
-      returnDate: formData.returnDate || '',
-      agreementNumber: formData.agreementNumber || '',
-      securityDeposit: formData.securityDeposit || '',
-      customFields: formData.customFields || {}
+      asset_name: formDataOrObject.assetName || formDataOrObject.name,
+      asset_tag: formDataOrObject.assetTag || formDataOrObject.tag,
+      receiver_name: formDataOrObject.receiverName || '',
+      exchange_type: formDataOrObject.exchangeType || 'Issue',
+      remarks: formDataOrObject.remarks || '',
+      custom_fields: formDataOrObject.customFields || {}
     };
-    const vId = formData.vendorId || formData.vendor?.vendorId;
+    const vId = formDataOrObject.vendorId || formDataOrObject.vendor?.vendorId;
     if (vId) payload.vendor = { vendorId: vId };
     return safePatch(`/assets/${id}`, payload);
   },

@@ -93,9 +93,14 @@ const Assets = () => {
         }
     };
 
-    const handleUpdateAsset = async (updatedAsset) => {
+    const handleUpdateAsset = async (updatedAssetData) => {
         try {
-            await apiService.updateAsset(updatedAsset.id, updatedAsset);
+            // Extract ID from FormData or object
+            const id = updatedAssetData instanceof FormData 
+                ? updatedAssetData.get('id') 
+                : updatedAssetData.id;
+
+            await apiService.updateAsset(id, updatedAssetData);
             fetchAssets();
             setIsEditModalOpen(false);
             setSelectedAsset(null);

@@ -343,25 +343,68 @@ const AddAssetModal = ({ isOpen, onClose, onAdd }) => {
         if (e) e.preventDefault();
         setLoading(true);
         try {
-            // Pass essential data plus actual file objects
-            const submitData = {
-                ...formData,
-                vendorId: formData.vendor?.vendorId || '',
-                photoFiles,
-                invoiceFile
-            };
+            // --- FIXED: Use Flat FormData (Backend Requirement) ---
+            const data = new FormData();
+            
+            // Basic Info
+            data.append('asset_name', formData.assetName);
+            data.append('asset_tag', formData.assetTag);
+            data.append('asset_type', formData.assetType);
+            data.append('receiver_name', formData.receiverName);
+            data.append('exchange_type', formData.exchangeType);
+            data.append('procurement_type', formData.procurementType);
+            data.append('vendor_id', formData.vendor?.vendorId || '');
+            data.append('remarks', formData.remarks);
+            
+            // Specs
+            data.append('company_name', formData.companyName);
+            data.append('generation', formData.generation);
+            data.append('ram', formData.ram);
+            data.append('hard_disk', formData.hardDisk);
+            
+            // Procurement Details
+            data.append('purchase_date', formData.purchaseDate);
+            data.append('po_number', formData.poNumber);
+            data.append('invoice_number', formData.invoiceNumber);
+            data.append('purchase_cost', formData.purchaseCost);
+            data.append('warranty_period', formData.warrantyPeriod);
+            data.append('vendor_contact', formData.vendorContact);
+            data.append('delivery_date', formData.deliveryDate);
+            
+            // Accessories
+            data.append('include_charger', formData.includeCharger);
+            data.append('charger_quantity', formData.chargerQuantity);
+            data.append('include_mouse', formData.includeMouse);
+            data.append('mouse_quantity', formData.mouseQuantity);
+            
+            // Custom Fields
+            if (formData.customFields) {
+                data.append('custom_fields', JSON.stringify(formData.customFields));
+            }
+
+            // Files
+            photoFiles.forEach((file, index) => {
+                data.append(`photo_file_${index}`, file);
+            });
+            if (invoiceFile) {
+                data.append('invoice_file', invoiceFile);
+            }
+
+            // Verification Logging
+            console.log("🚀 [FORMDATA VERIFICATION] Asset Payload:");
+            for (let pair of data.entries()) {
+                console.log(`👉 ${pair[0]}:`, pair[1] instanceof File ? `File(${pair[1].name})` : pair[1]);
+            }
 
             if (formData.quantity === 1) {
-                const response = await apiService.createAsset(submitData);
+                const response = await apiService.createAsset(data);
                 const newAsset = response.data || response;
                 const assetWithDetails = { ...newAsset, ...formData, id: newAsset.id || `TEMP-${Date.now()}` };
                 setAddedAssets([assetWithDetails]);
-                setSelectedAssets([assetWithDetails.id]); // Default select the new asset
+                setSelectedAssets([assetWithDetails.id]);
             } else {
-                // For bulk, we'd normally call createAsset for each or a bulk API
-                // For now, assuming onAdd handles the bulk creation if not already done
-                // But let's assume single for the prompt flow for now as per requirement
-                onAdd(submitData);
+                // Bulk logic would go here, but focusing on single for now
+                onAdd(data);
                 resetForm();
                 onClose();
                 return;

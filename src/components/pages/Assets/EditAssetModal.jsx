@@ -165,14 +165,60 @@ const EditAssetModal = ({ isOpen, onClose, onUpdate, asset }) => {
         }));
     };
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        // Pass essential data for PATCH update
-        const submitData = {
-            ...formData,
-            vendorId: formData.vendor?.vendorId || ''
-        };
-        onUpdate(submitData);
+    const handleSubmit = async (e) => {
+        if (e) e.preventDefault();
+        
+        // --- FIXED: Use Flat FormData (Backend Requirement) ---
+        const data = new FormData();
+        
+        // Identification
+        data.append('id', formData.id);
+        
+        // Basic Info
+        data.append('asset_name', formData.assetName);
+        data.append('asset_tag', formData.assetTag);
+        data.append('asset_type', asset.assetType || asset.type || '');
+        data.append('receiver_name', formData.receiverName);
+        data.append('exchange_type', formData.exchangeType);
+        data.append('procurement_type', formData.procurementType);
+        data.append('vendor_id', formData.vendor?.vendorId || '');
+        data.append('remarks', formData.remarks);
+        
+        // Specs
+        data.append('company_name', formData.companyName);
+        data.append('generation', formData.generation);
+        data.append('ram', formData.ram);
+        data.append('hard_disk', formData.hardDisk);
+        
+        // Procurement Details
+        data.append('purchase_date', formData.purchaseDate);
+        data.append('po_number', formData.poNumber);
+        data.append('invoice_number', formData.invoiceNumber);
+        data.append('purchase_cost', formData.purchaseCost);
+        data.append('warranty_period', formData.warrantyPeriod);
+        data.append('vendor_contact', formData.vendorContact);
+        data.append('delivery_date', formData.deliveryDate);
+        data.append('return_date', formData.returnDate);
+        data.append('agreement_number', formData.agreementNumber);
+        data.append('security_deposit', formData.securityDeposit);
+        
+        // Custom Fields
+        if (formData.customFields) {
+            data.append('custom_fields', JSON.stringify(formData.customFields));
+        }
+
+        // New Files (if any)
+        photoFiles.forEach((file, index) => {
+            data.append(`photo_file_${index}`, file);
+        });
+
+        // Verification Logging
+        console.log("🚀 [FORMDATA VERIFICATION] Asset Update Payload:");
+        for (let pair of data.entries()) {
+            console.log(`👉 ${pair[0]}:`, pair[1] instanceof File ? `File(${pair[1].name})` : pair[1]);
+        }
+
+        onUpdate(data);
     };
 
     return (

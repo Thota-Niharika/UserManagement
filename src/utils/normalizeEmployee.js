@@ -110,6 +110,81 @@ export const findProof = (proofs, targetType) => {
     });
 };
 
+/**
+ * Generic helper to find a record in an array by a type key (case-insensitive).
+ */
+export const findInArray = (list, typeKey, targetType) => {
+    if (!Array.isArray(list)) return null;
+    const target = targetType.toUpperCase();
+    return list.find(item => {
+        const val = (item[typeKey] || '').toString().toUpperCase();
+        return val === target;
+    });
+};
+
+/**
+ * Maps DB snake_case fields for Education to frontend camelCase.
+ */
+export const normalizeEducationRecord = (raw) => {
+    if (!raw) return null;
+    return {
+        ...raw,
+        institutionName: raw.institution_name || raw.institutionName || "",
+        passoutYear: raw.passout_year || raw.passoutYear || "",
+        percentageCgpa: raw.percentage || raw.percentageCgpa || "",
+        hallTicketNo: raw.hall_ticket_number || raw.hallTicketNo || "",
+        certificatePath: raw.certificate_file_path || raw.certificatePath || null,
+        marksMemoPath: raw.marks_memo_file_path || raw.marksMemoPath || null
+    };
+};
+
+/**
+ * Maps DB snake_case fields for Internship to frontend camelCase.
+ */
+export const normalizeInternshipRecord = (raw) => {
+    if (!raw) return null;
+    return {
+        ...raw,
+        companyName: raw.company_name || raw.companyName || "",
+        startDate: formatDate(raw.start_date || raw.startDate),
+        endDate: formatDate(raw.end_date || raw.endDate),
+        offerLetterPath: raw.offer_letter_file_path || raw.offerLetterPath || null,
+        experienceCertificatePath: raw.experience_certificate_file_path || raw.experienceCertificatePath || null
+    };
+};
+
+/**
+ * Maps DB snake_case fields for Work Experience to frontend camelCase.
+ */
+export const normalizeWorkExperienceRecord = (raw) => {
+    if (!raw) return null;
+    return {
+        ...raw,
+        companyName: raw.company_name || raw.companyName || "",
+        jobTitle: raw.job_title || raw.jobTitle || "",
+        startDate: formatDate(raw.start_date || raw.startDate),
+        endDate: formatDate(raw.end_date || raw.endDate),
+        ctc: raw.ctc || "",
+        offerLetterPath: raw.offer_letter_file_path || raw.offerLetterPath || null,
+        relievingLetterPath: raw.relieving_letter_file_path || raw.relievingLetterPath || null,
+        payslipsPath: raw.payslips_file_path || raw.payslipsPath || null,
+        experienceCertificatePath: raw.experience_certificate_file_path || raw.experienceCertificatePath || null
+    };
+};
+
+/**
+ * Maps DB snake_case fields for Identity Proofs to frontend camelCase.
+ */
+export const normalizeProofRecord = (raw) => {
+    if (!raw) return null;
+    return {
+        ...raw,
+        proofType: raw.proof_type || raw.proofType || raw.type || "",
+        idNumber: raw.id_number || raw.idNumber || raw.panNumber || raw.aadhaarNumber || "",
+        filePath: raw.file_path || raw.filePath || null
+    };
+};
+
 // ─── MAIN NORMALIZER ─────────────────────────────────────────────
 
 export const normalizeEmployee = (rawEmp) => {
@@ -170,12 +245,12 @@ export const normalizeEmployee = (rawEmp) => {
                      findProof(identityProofs, 'AADHAR')?.aadhaarNumber || "",
         
         // Paths
-        photoPath: scavengePath(emp, 'photoPath', 'panProof.photoFilePath', 'personal.photoPath', 'employee.photoPath') || findProof(identityProofs, 'PHOTO')?.filePath || null,
-        panPath: scavengePath(emp, 'panPath', 'panProof.panFilePath', 'employee.panPath', 'identityProof.panFilePath') || findProof(identityProofs, 'PAN')?.filePath || null,
-        aadharPath: scavengePath(emp, 'aadharPath', 'aadhaarPath', 'panProof.aadhaarFilePath', 'employee.aadharPath', 'identityProof.aadhaarFilePath') || findProof(identityProofs, 'AADHAR')?.filePath || null,
-        passbookPath: scavengePath(emp, 'passbookPath', 'bankDetails.documentFilePath', 'employee.bankDetails.documentFilePath', 'bankProof.documentFilePath', 'bankDocumentPath') || null,
-        passportPath: scavengePath(emp, 'passportPath', 'panProof.passportFilePath', 'employee.passportPath') || findProof(identityProofs, 'PASSPORT')?.filePath || null,
-        voterPath: scavengePath(emp, 'voterPath', 'panProof.voterIdFilePath', 'employee.voterPath', 'voterIdFilePath') || findProof(identityProofs, 'VOTER')?.filePath || null,
+        photoPath: scavengePath(emp, 'photoPath', 'panProof.photoFilePath', 'personal.photoPath', 'employee.photoPath') || scavengePath(findProof(identityProofs, 'PHOTO'), 'filePath', 'file_path') || null,
+        panPath: scavengePath(emp, 'panPath', 'panProof.panFilePath', 'employee.panPath', 'identityProof.panFilePath') || scavengePath(findProof(identityProofs, 'PAN'), 'filePath', 'file_path') || null,
+        aadharPath: scavengePath(emp, 'aadharPath', 'aadhaarPath', 'panProof.aadhaarFilePath', 'employee.aadharPath', 'identityProof.aadhaarFilePath') || scavengePath(findProof(identityProofs, 'AADHAR'), 'filePath', 'file_path') || null,
+        passbookPath: scavengePath(emp, 'passbookPath', 'bankDetails.documentFilePath', 'employee.bankDetails.documentFilePath', 'bankProof.documentFilePath', 'bankDocumentPath') || scavengePath(emp?.bankDetails, 'filePath', 'file_path') || null,
+        passportPath: scavengePath(emp, 'passportPath', 'panProof.passportFilePath', 'employee.passportPath') || scavengePath(findProof(identityProofs, 'PASSPORT'), 'filePath', 'file_path') || null,
+        voterPath: scavengePath(emp, 'voterPath', 'panProof.voterIdFilePath', 'employee.voterPath', 'voterIdFilePath') || scavengePath(findProof(identityProofs, 'VOTER'), 'filePath', 'file_path') || null,
 
         // Personal
         bloodGroup: scavengeValue(emp, 'bloodGroup', 'personal.bloodGroup', 'employee.bloodGroup', 'personalDetails.bloodGroup') ?? "",
@@ -200,20 +275,25 @@ export const normalizeEmployee = (rawEmp) => {
         permanentAddress: scavengeValue(emp, 'permanentAddress', 'permAddress', 'personal.permanentAddress', 'employee.permanentAddress') ?? "",
 
         // Education & Lists
-        ssc: scavengeValue(emp, 'ssc', 'education.ssc') ?? null,
-        intermediate: scavengeValue(emp, 'intermediate', 'education.intermediate') ?? null,
-        graduation: scavengeValue(emp, 'graduation', 'education.graduation') ?? null,
-        postGraduations: Array.isArray(emp?.postGraduations) ? emp.postGraduations : (Array.isArray(emp?.education?.postGraduations) ? emp.education.postGraduations : []),
+        ssc: normalizeEducationRecord(scavengeValue(emp, 'ssc', 'education.ssc') || findInArray(emp?.educations || emp?.educationHistory, 'education_type', 'SSC') || findInArray(emp?.educations || emp?.educationHistory, 'educationType', 'SSC')),
+        intermediate: normalizeEducationRecord(scavengeValue(emp, 'intermediate', 'education.intermediate') || findInArray(emp?.educations || emp?.educationHistory, 'education_type', 'INTERMEDIATE') || findInArray(emp?.educations || emp?.educationHistory, 'educationType', 'INTERMEDIATE')),
+        graduation: normalizeEducationRecord(scavengeValue(emp, 'graduation', 'education.graduation') || findInArray(emp?.educations || emp?.educationHistory, 'education_type', 'GRADUATION') || findInArray(emp?.educations || emp?.educationHistory, 'educationType', 'GRADUATION')),
+        postGraduations: (Array.isArray(emp?.postGraduations) ? emp.postGraduations : (Array.isArray(emp?.education?.postGraduations) ? emp.education.postGraduations : [])).map(normalizeEducationRecord),
         otherCertificates: Array.isArray(emp?.otherCertificates) ? emp.otherCertificates : (Array.isArray(emp?.education?.otherCertificates) ? emp.education.otherCertificates : []),
-        internships: Array.isArray(emp?.internships) ? emp.internships : (Array.isArray(emp?.employee?.internships) ? emp.employee.internships : []),
-        workExperiences: Array.isArray(emp?.workExperiences || emp?.workHistory) ? (emp.workExperiences || emp.workHistory) : (Array.isArray(emp?.employee?.workExperiences) ? emp.employee.workExperiences : []),
+        internships: (Array.isArray(emp?.internships) ? emp.internships : (Array.isArray(emp?.employee?.internships) ? emp.employee.internships : [])).map(normalizeInternshipRecord),
+        workExperiences: (Array.isArray(emp?.workExperiences || emp?.workHistory) ? (emp.workExperiences || emp.workHistory) : (Array.isArray(emp?.employee?.workExperiences) ? emp.employee.workExperiences : [])).map(normalizeWorkExperienceRecord),
         
         // Metadata
-        identityProofs: identityProofs,
-        educationCount: Number(emp?.educationCount ?? 0),
-        internshipCount: Number(emp?.internshipCount ?? 0),
-        workExperienceCount: Number(emp?.workExperienceCount ?? 0),
-        identityProofCount: Number(emp?.identityProofCount ?? 0),
+        identityProofs: identityProofs.map(normalizeProofRecord),
+        educationCount: Number(emp?.educationCount ?? (
+            (emp?.ssc || emp?.education?.ssc ? 1 : 0) + 
+            (emp?.intermediate || emp?.education?.intermediate ? 1 : 0) + 
+            (emp?.graduation || emp?.education?.graduation ? 1 : 0) +
+            (Array.isArray(emp?.postGraduations) ? emp.postGraduations.length : 0)
+        )),
+        internshipCount: Number(emp?.internshipCount ?? (Array.isArray(emp?.internships) ? emp.internships.length : 0)),
+        workExperienceCount: Number(emp?.workExperienceCount ?? (Array.isArray(emp?.workExperiences || emp?.workHistory) ? (emp.workExperiences || emp.workHistory).length : 0)),
+        identityProofCount: Number(emp?.identityProofCount ?? identityProofs.length),
         dept: (emp?.deptCode || (typeof emp?.dept === 'object' ? emp?.dept?.deptCode : emp?.dept)) ?? "",
         role: (emp?.roleCode || (typeof emp?.role === 'object' ? emp?.role?.roleCode : emp?.role)) ?? "",
         entity: (emp?.entityCode || (typeof emp?.entity === 'object' ? emp?.entity?.entityCode : emp?.entity)) ?? "",
