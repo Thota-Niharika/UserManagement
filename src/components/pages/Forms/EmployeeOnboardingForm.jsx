@@ -721,31 +721,69 @@ const EmployeeOnboardingForm = () => {
                 return;
             }
 
-            // --- FIXED: Use Flat FormData (Strict Backend Requirement) ---
+            // --- FIXED: Group Metadata into 'data' part (Backend Requirement) ---
             const formData = new FormData();
 
-            // 1. Personal Details
-            formData.append('full_name', personal.fullName);
-            formData.append('email', personal.email);
-            formData.append('phone', personal.phone);
-            formData.append('dob', personal.dateOfBirth);
-            formData.append('blood_group', personal.bloodGroup);
-            formData.append('father_name', personal.fatherName);
-            formData.append('father_phone', personal.fatherPhone || '');
-            formData.append('mother_name', personal.motherName);
-            formData.append('mother_phone', personal.motherPhone || '');
-            formData.append('permanent_address', personal.permAddress);
-            formData.append('present_address', personal.presAddress);
-            formData.append('emergency_contact_name', personal.emergencyName);
-            formData.append('emergency_relationship', personal.emergencyRel);
-            formData.append('emergency_phone', personal.emergencyPhone);
+            // 1. Prepare Metadata Object (DTO)
+            const onboardingData = {
+                // Personal
+                full_name: personal.fullName,
+                email: personal.email,
+                phone: personal.phone,
+                dob: personal.dateOfBirth,
+                blood_group: personal.bloodGroup,
+                father_name: personal.fatherName,
+                father_phone: personal.fatherPhone || '',
+                mother_name: personal.motherName,
+                mother_phone: personal.motherPhone || '',
+                permanent_address: personal.permAddress,
+                present_address: personal.presAddress,
+                emergency_contact_name: personal.emergencyName,
+                emergency_relationship: personal.emergencyRel,
+                emergency_phone: personal.emergencyPhone,
 
-            // 2. Identity & Documents
-            const cleanPan = (documents.panNumber || '').replace(/\s+/g, '').toUpperCase();
-            const cleanAadhar = (documents.aadharNumber || '').replace(/\s+/g, '');
-            formData.append('pan_number', cleanPan);
-            formData.append('aadhaar_number', cleanAadhar);
+                // Identity
+                pan_number: (documents.panNumber || '').replace(/\s+/g, '').toUpperCase(),
+                aadhaar_number: (documents.aadharNumber || '').replace(/\s+/g, ''),
 
+                // Bank
+                bank_name: bank.bankName,
+                branch_name: bank.branchName,
+                account_number: bank.accountNumber,
+                ifsc_code: bank.ifscCode,
+                upi_id: bank.upiId || '',
+                bank_document_type: bank.documentType || 'PASSBOOK',
+
+                // Education List Mappings (Nested)
+                ssc_data: { 
+                    institutionName: education.ssc.school, passoutYear: education.ssc.year, 
+                    percentageCgpa: education.ssc.percentage, hallTicketNo: education.ssc.htNumber 
+                },
+                inter_data: { 
+                    institutionName: education.inter.school, passoutYear: education.inter.year, 
+                    percentageCgpa: education.inter.percentage, hallTicketNo: education.inter.htNumber 
+                },
+                graduation_data: { 
+                    institutionName: education.grad.school, passoutYear: education.grad.year, 
+                    percentageCgpa: education.grad.percentage, hallTicketNo: education.grad.htNumber 
+                },
+                post_graduations: education.postGrad.map(pg => ({
+                    institutionName: pg.school, passoutYear: pg.year, percentageCgpa: pg.percentage
+                })),
+                
+                // Experience List Mappings (Nested)
+                internships: experience.internships.map(int => ({
+                    companyName: int.company, joiningDate: int.joining, relievingDate: int.relieving, duration: int.duration
+                })),
+                work_experiences: experience.workHistory.map(work => ({
+                    companyName: work.company, yearsOfExp: work.years
+                }))
+            };
+
+            // 🚀 IMPORTANT: Append as 'data' part (JSON Blob)
+            formData.append('data', new Blob([JSON.stringify(onboardingData)], { type: 'application/json' }));
+
+            // 2. Append Files separately (Flat parts)
             const isNewFile = (f) => f && !f.isServerFile && f instanceof File;
 
             if (isNewFile(documents.panCard)) formData.append('pan_file', documents.panCard);
@@ -753,60 +791,27 @@ const EmployeeOnboardingForm = () => {
             if (isNewFile(documents.passportPhoto)) formData.append('photo_file', documents.passportPhoto);
             if (isNewFile(documents.passportDoc)) formData.append('passport_file', documents.passportDoc);
             if (isNewFile(documents.voterId)) formData.append('voter_file', documents.voterId);
-
-            // 3. Bank Details
-            formData.append('bank_name', bank.bankName);
-            formData.append('branch_name', bank.branchName);
-            formData.append('account_number', bank.accountNumber);
-            formData.append('ifsc_code', bank.ifscCode);
-            formData.append('upi_id', bank.upiId || '');
-            formData.append('bank_document_type', bank.documentType || 'PASSBOOK');
+            
             if (isNewFile(bank.docImage)) formData.append('bank_document_file', bank.docImage);
 
-            // 4. Education
-            const sscData = { 
-                institutionName: education.ssc.school, passoutYear: education.ssc.year, 
-                percentageCgpa: education.ssc.percentage, hallTicketNo: education.ssc.htNumber 
-            };
-            formData.append('ssc_data', JSON.stringify(sscData));
             if (isNewFile(education.ssc.certificate)) formData.append('ssc_file', education.ssc.certificate);
             if (isNewFile(education.ssc.marksMemo)) formData.append('ssc_marks_file', education.ssc.marksMemo);
 
-            const interData = { 
-                institutionName: education.inter.school, passoutYear: education.inter.year, 
-                percentageCgpa: education.inter.percentage, hallTicketNo: education.inter.htNumber 
-            };
-            formData.append('inter_data', JSON.stringify(interData));
             if (isNewFile(education.inter.certificate)) formData.append('inter_file', education.inter.certificate);
             if (isNewFile(education.inter.marksMemo)) formData.append('inter_marks_file', education.inter.marksMemo);
 
-            const gradData = { 
-                institutionName: education.grad.school, passoutYear: education.grad.year, 
-                percentageCgpa: education.grad.percentage, hallTicketNo: education.grad.htNumber 
-            };
-            formData.append('graduation_data', JSON.stringify(gradData));
             if (isNewFile(education.grad.certificate)) formData.append('graduation_file', education.grad.certificate);
             if (isNewFile(education.grad.marksMemo)) formData.append('graduation_marks_file', education.grad.marksMemo);
 
-            // Lists
-            formData.append('post_graduations', JSON.stringify(education.postGrad.map(pg => ({
-                institutionName: pg.school, passoutYear: pg.year, percentageCgpa: pg.percentage
-            }))));
             education.postGrad.forEach((pg, i) => {
                 if (isNewFile(pg.certificate)) formData.append(`post_grad_${i}_file`, pg.certificate);
             });
 
-            formData.append('internships', JSON.stringify(experience.internships.map(int => ({
-                companyName: int.company, joiningDate: int.joining, relievingDate: int.relieving, duration: int.duration
-            }))));
             experience.internships.forEach((int, i) => {
                 if (isNewFile(int.offerLetter)) formData.append(`internship_${i}_offer`, int.offerLetter);
                 if (isNewFile(int.relievingLetter)) formData.append(`internship_${i}_relieving`, int.relievingLetter);
             });
 
-            formData.append('work_experiences', JSON.stringify(experience.workHistory.map(work => ({
-                companyName: work.company, yearsOfExp: work.years
-            }))));
             experience.workHistory.forEach((work, i) => {
                 if (isNewFile(work.offerLetter)) formData.append(`work_${i}_offer`, work.offerLetter);
                 if (isNewFile(work.relievingLetter)) formData.append(`work_${i}_relieving`, work.relievingLetter);
