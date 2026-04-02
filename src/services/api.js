@@ -7,7 +7,7 @@ import { parseIfString } from '../utils/apiUtils';
 export const submitOnboarding = async (dto, files = [], token = null) => {
   const formData = new FormData();
 
-  formData.append("dto", JSON.stringify(dto));
+  formData.append("data", new Blob([JSON.stringify(dto)], { type: 'application/json' }));
 
   const fileList = Array.isArray(files)
     ? files
