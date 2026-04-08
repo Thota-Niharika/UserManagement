@@ -720,9 +720,6 @@ const EmployeeOnboardingForm = () => {
         try {
             setLoading(true);
 
-            const tokenFromUrl = new URLSearchParams(window.location.search).get('token');
-            const submitToken = token || tokenFromUrl;
-
             // Fix 2: Stop Form Submit if File Missing
             if (!bank.docImage && !bank.bankDocumentPath) {
                 alert("Please upload bank document (Cancelled Cheque / Passbook).");
@@ -731,7 +728,6 @@ const EmployeeOnboardingForm = () => {
                 return;
             }
 
-            // --- Revert: Use JSON DTO + Files (Resolves 'Required part data is not present') ---
             const dto = {
                 fullName: (personal.fullName || '').trim(),
                 email: (personal.email || '').trim(),
@@ -753,8 +749,8 @@ const EmployeeOnboardingForm = () => {
                     educationType: 'SSC',
                     institutionName: education.ssc.school || education.ssc.college,
                     hallTicketNumber: education.ssc.htNumber,
-                    passoutYear: education.ssc.year,
-                    percentage: education.ssc.percentage,
+                    passoutYear: Number(education.ssc.year),
+                    percentage: Number(education.ssc.percentage),
                     certificateFilePath: getFileInfo(education.ssc.certificate, "SSC Cert"),
                     marksMemoFilePath: getFileInfo(education.ssc.marksMemo, "SSC Memo"),
                 },
@@ -763,27 +759,30 @@ const EmployeeOnboardingForm = () => {
                     educationType: 'INTERMEDIATE',
                     institutionName: education.inter.school || education.inter.college,
                     hallTicketNumber: education.inter.htNumber,
-                    passoutYear: education.inter.year,
-                    percentage: education.inter.percentage,
+                    passoutYear: Number(education.inter.year),
+                    percentage: Number(education.inter.percentage),
                     certificateFilePath: getFileInfo(education.inter.certificate, "Inter Cert"),
                     marksMemoFilePath: getFileInfo(education.inter.marksMemo, "Inter Memo"),
                 },
-                graduation: {
-                    id: education.grad.id || null,
-                    educationType: 'GRADUATION',
-                    institutionName: education.grad.school || education.grad.college,
-                    hallTicketNumber: education.grad.htNumber,
-                    passoutYear: education.grad.year,
-                    percentage: education.grad.percentage,
-                    certificateFilePath: getFileInfo(education.grad.certificate, "Grad Cert"),
-                    marksMemoFilePath: getFileInfo(education.grad.marksMemo, "Grad Memo"),
-                },
+                graduations: [
+                    {
+                        id: education.grad.id || null,
+                        educationType: 'GRADUATION',
+                        institutionName: education.grad.school || education.grad.college,
+                        hallTicketNumber: education.grad.htNumber,
+                        passoutYear: Number(education.grad.year),
+                        percentage: Number(education.grad.percentage),
+                        certificateFilePath: getFileInfo(education.grad.certificate, "Grad Cert"),
+                        marksMemoFilePath: getFileInfo(education.grad.marksMemo, "Grad Memo"),
+                    }
+                ],
                 postGraduations: education.postGrad.map(pg => ({
                     id: pg.id || null,
                     educationType: 'POST_GRADUATION',
                     institutionName: pg.school || pg.college,
-                    passoutYear: pg.year,
-                    percentage: pg.percentage,
+                    hallTicketNumber: pg.htNumber || pg.hallTicketNo,
+                    passoutYear: Number(pg.year),
+                    percentage: Number(pg.percentage),
                     certificateFilePath: getFileInfo(pg.certificate, "PG Cert"),
                 })),
                 otherCertificates: education.otherCerts.map(cert => ({
@@ -806,7 +805,7 @@ const EmployeeOnboardingForm = () => {
                 workExperiences: experience.workHistory.map(work => ({
                     id: work.id || null,
                     companyName: work.company,
-                    yearsOfExp: work.years,
+                    yearsOfExperience: work.years,
                     offerLetterPath: getFileInfo(work.offerLetter, "Work Offer"),
                     relievingLetterPath: getFileInfo(work.relievingLetter, "Work Relieving"),
                     payslipsPath: getFileInfo(work.payslips, "Work Payslips"),
@@ -826,7 +825,6 @@ const EmployeeOnboardingForm = () => {
                 },
 
                 // --- Fat IdentityProof DTO ---
-                // The backend uses 'panProof' as the field name even if it contains all other info
                 panProof: {
                     id: documents.id || null,
                     panNumber: (documents.panNumber || '').replace(/\s+/g, '').toUpperCase(),
@@ -841,62 +839,52 @@ const EmployeeOnboardingForm = () => {
             };
 
             const isNewFile = (f) => f && !f.isServerFile && f instanceof File;
-            const fileList = [];
+            const filesPayload = {};
 
-            if (isNewFile(education.ssc.certificate)) fileList.push(education.ssc.certificate);
-            if (isNewFile(education.ssc.marksMemo)) fileList.push(education.ssc.marksMemo);
-            if (isNewFile(education.inter.certificate)) fileList.push(education.inter.certificate);
-            if (isNewFile(education.inter.marksMemo)) fileList.push(education.inter.marksMemo);
-            if (isNewFile(education.grad.certificate)) fileList.push(education.grad.certificate);
-            if (isNewFile(education.grad.marksMemo)) fileList.push(education.grad.marksMemo);
+            if (isNewFile(education.ssc.certificate)) filesPayload['ssc_certificate'] = education.ssc.certificate;
+            if (isNewFile(education.inter.certificate)) filesPayload['inter_certificate'] = education.inter.certificate;
+            
+            if (isNewFile(education.grad.certificate)) filesPayload['grad_certificate_0'] = education.grad.certificate;
+            if (isNewFile(education.grad.marksMemo)) filesPayload['grad_marks_0'] = education.grad.marksMemo;
 
-            education.postGrad.forEach(pg => { if (isNewFile(pg.certificate)) fileList.push(pg.certificate); });
-            education.otherCerts.forEach(c => { if (isNewFile(c.certificate)) fileList.push(c.certificate); });
+            education.postGrad.forEach((pg, i) => { if (isNewFile(pg.certificate)) filesPayload[`postgrad_certificate_${i}`] = pg.certificate; });
+            education.otherCerts.forEach((c, i) => { if (isNewFile(c.certificate)) filesPayload[`certification_certificate_file_${i}`] = c.certificate; });
 
-            experience.internships.forEach(int => {
-                if (isNewFile(int.offerLetter)) fileList.push(int.offerLetter);
-                if (isNewFile(int.relievingLetter)) fileList.push(int.relievingLetter);
-            });
-            experience.workHistory.forEach(work => {
-                if (isNewFile(work.offerLetter)) fileList.push(work.offerLetter);
-                if (isNewFile(work.relievingLetter)) fileList.push(work.relievingLetter);
-                if (isNewFile(work.payslips)) fileList.push(work.payslips);
-                if (isNewFile(work.experienceCert)) fileList.push(work.experienceCert);
+            experience.internships.forEach((int, i) => {
+                if (isNewFile(int.offerLetter)) filesPayload[`internship_offer_letter_${i}`] = int.offerLetter;
+                if (isNewFile(int.relievingLetter)) filesPayload[`internship_experience_certificate_${i}`] = int.relievingLetter;
             });
 
-            if (isNewFile(bank.docImage)) fileList.push(bank.docImage);
-            if (isNewFile(documents.panCard)) fileList.push(documents.panCard);
-            if (isNewFile(documents.aadharCard)) fileList.push(documents.aadharCard);
-            if (isNewFile(documents.passportPhoto)) fileList.push(documents.passportPhoto);
-            if (isNewFile(documents.passportDoc)) fileList.push(documents.passportDoc);
-            if (isNewFile(documents.voterId)) fileList.push(documents.voterId);
+            experience.workHistory.forEach((work, i) => {
+                if (isNewFile(work.offerLetter)) filesPayload[`experience_offer_letter_${i}`] = work.offerLetter;
+                if (isNewFile(work.relievingLetter)) filesPayload[`experience_relieving_letter_${i}`] = work.relievingLetter;
+                if (isNewFile(work.payslips)) filesPayload[`experience_payslips_${i}`] = work.payslips;
+                if (isNewFile(work.experienceCert)) filesPayload[`experience_certificate_${i}`] = work.experienceCert;
+            });
+
+            if (isNewFile(bank.docImage)) filesPayload['bank'] = bank.docImage;
+            if (isNewFile(documents.panCard)) filesPayload['pan'] = documents.panCard;
+            if (isNewFile(documents.aadharCard)) filesPayload['aadhaar'] = documents.aadharCard;
+            if (isNewFile(documents.passportPhoto)) filesPayload['photo'] = documents.passportPhoto;
+            if (isNewFile(documents.passportDoc)) filesPayload['passport'] = documents.passportDoc;
+            if (isNewFile(documents.voterId)) filesPayload['voter'] = documents.voterId;
 
             console.log("🚀 Submitting clean multipart payload.");
-            console.log("Token used:", submitToken);
+            console.log("Token used:", token);
             console.log("Full payload (DTO):", JSON.stringify(dto, null, 2));
-            console.log("Files attached:", fileList.map(f => f.name));
+            console.log("Files attached:", Object.keys(filesPayload));
 
-            const response = await submitOnboarding(dto, fileList, submitToken);
+            const response = await submitOnboarding(dto, filesPayload, token);
 
             console.log("✅ Onboarding Submit Success:", response);
             setStep(7);
         } catch (error) {
-            console.error("❌ Submission Failed Details:", {
-              status: error.response?.status,
-              data: error.response?.data,
-              message: error.message,
-              token: submitToken
-            });
+            console.error("❌ FULL ERROR OBJECT:", error);
+            console.error("Status:", error.response?.status);
+            console.error("Response Data:", error.response?.data);
+            console.error("Message:", error.message);
         
-            let userMessage = "Submission failed. Please try again.";
-        
-            if (error.response?.status === 400) {
-              userMessage = "Invalid data: " + JSON.stringify(error.response.data);
-            } else if (error.response?.status === 500) {
-              userMessage = "Server error. Check if all required fields are filled correctly.";
-            }
-        
-            alert(userMessage);
+            alert(`Submission failed with status ${error.response?.status}. Check console for details.`);
         } finally {
             setLoading(false);
         }

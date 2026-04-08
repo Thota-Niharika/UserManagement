@@ -206,7 +206,7 @@ export const normalizeEmployee = (rawEmp) => {
         // Education & Lists
         ssc: scavengeValue(emp, 'ssc', 'education.ssc') ?? null,
         intermediate: scavengeValue(emp, 'intermediate', 'education.intermediate') ?? null,
-        graduation: scavengeValue(emp, 'graduation', 'education.graduation') ?? null,
+        graduation: scavengeValue(emp, 'graduation', 'education.graduation') ?? (Array.isArray(emp?.graduations) && emp.graduations.length > 0 ? emp.graduations[0] : null),
         postGraduations: Array.isArray(emp?.postGraduations) ? emp.postGraduations : (Array.isArray(emp?.education?.postGraduations) ? emp.education.postGraduations : []),
         otherCertificates: Array.isArray(emp?.otherCertificates) ? emp.otherCertificates : (Array.isArray(emp?.education?.otherCertificates) ? emp.education.otherCertificates : []),
         internships: Array.isArray(emp?.internships) ? emp.internships : (Array.isArray(emp?.employee?.internships) ? emp.employee.internships : []),

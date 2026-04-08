@@ -19,9 +19,45 @@ const EmployeeProfile = () => {
     const fetchProfile = async () => {
         try {
             setLoading(true);
-            const data = await apiService.getEmployeeDetail(id);
-            if (!data) throw new Error("Employee not found");
-            setEmployee(data);
+            const employeeData = await apiService.getEmployeeDetail(id);
+            if (!employeeData) throw new Error("Employee not found");
+
+            // --- FETCH FULL ONBOARDING DATA ---
+            try {
+                const onboardingData = await apiService.getOnboardingDetail(id);
+                if (onboardingData) {
+                    console.log("📦 Merging Onboarding Data:", onboardingData);
+                    // Merge array fields directly from the Onboarding payload
+                    employeeData.ssc = onboardingData.ssc || employeeData.ssc;
+                    employeeData.intermediate = onboardingData.intermediate || employeeData.intermediate;
+                    employeeData.graduation = onboardingData.graduation || (Array.isArray(onboardingData.graduations) && onboardingData.graduations.length > 0 ? onboardingData.graduations[0] : null) || employeeData.graduation;
+                    employeeData.postGraduations = onboardingData.postGraduations || employeeData.postGraduations;
+                    employeeData.otherCertificates = onboardingData.otherCertificates || employeeData.otherCertificates;
+                    
+                    employeeData.internships = onboardingData.internships || employeeData.internships;
+                    employeeData.workExperiences = onboardingData.workExperiences || employeeData.workExperiences;
+                    
+                    // Merge proofs
+                    employeeData.panPath = onboardingData.panProof?.panFilePath || employeeData.panPath;
+                    employeeData.panNumber = onboardingData.panProof?.panNumber || employeeData.panNumber;
+                    
+                    employeeData.aadharPath = onboardingData.aadharProof?.aadhaarFilePath || employeeData.aadharPath;
+                    employeeData.aadharNumber = onboardingData.aadharProof?.aadhaarNumber || employeeData.aadharNumber;
+                    
+                    employeeData.photoPath = onboardingData.photoProof?.photoFilePath || employeeData.photoPath;
+                    employeeData.passportPath = onboardingData.passportProof?.passportFilePath || employeeData.passportPath;
+                    employeeData.voterPath = onboardingData.voterProof?.voterIdFilePath || employeeData.voterPath;
+                    
+                    employeeData.bankName = onboardingData.bankDetails?.bankName || employeeData.bankName;
+                    employeeData.accountNumber = onboardingData.bankDetails?.accountNumber || employeeData.accountNumber;
+                    employeeData.ifscCode = onboardingData.bankDetails?.ifscCode || employeeData.ifscCode;
+                    employeeData.passbookPath = onboardingData.bankDetails?.documentFilePath || employeeData.passbookPath;
+                }
+            } catch (err) {
+                console.warn("⚠️ Could not fetch dedicated onboarding details. Falling back to basic employee details.", err);
+            }
+
+            setEmployee(employeeData);
         } catch (err) {
             console.error("❌ Failed to load employee profile:", err);
             setToast({ show: true, message: err.message || "Failed to load profile", type: 'error' });
@@ -446,26 +482,27 @@ const EmployeeProfile = () => {
                                     </div>
                                 </div>
                                 <div className="detail-item-compact">
-                                    <Tag size={14} />
-                                    <div>
-                                        <label>IFSC Code</label>
-                                        <span>{emp.ifscCode || '-'}</span>
-                                    </div>
-                                </div>
-                                <div className="detail-item-compact">
                                     <ShieldCheck size={14} />
                                     <div>
                                         <label>Account Number</label>
-                                        <span>{emp.accountNumber || '-'}</span>
+                                        <span className="font-mono text-primary">{emp.accountNumber || '-'}</span>
+                                    </div>
+                                </div>
+                                <div className="detail-item-compact">
+                                    <Tag size={14} />
+                                    <div>
+                                        <label>IFSC Code</label>
+                                        <span className="font-mono">{emp.ifscCode || '-'}</span>
                                     </div>
                                 </div>
                                 <div className="detail-item-compact">
                                     <Tag size={14} />
                                     <div>
                                         <label>UPI ID</label>
-                                        <span>{emp.upiId || '-'}</span>
+                                        <span className="font-mono">{emp.upiId || '-'}</span>
                                     </div>
                                 </div>
+
                             </div>
                         </div>
 

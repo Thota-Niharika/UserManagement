@@ -87,12 +87,22 @@ export const safePatch = async (url, payload) => {
 };
 
 // ─── ONBOARDING (NAMED EXPORT) ──────────────────────────
-export const submitOnboarding = async (dto, files = [], token = null) => {
+export const submitOnboarding = async (dto, files = {}, token = null) => {
   const formData = new FormData();
-  formData.append("data", new Blob([JSON.stringify(dto)], { type: "application/json" }));
+  // Send data as raw string exactly as the controller expects it @RequestPart("data") String data
+  formData.append("data", JSON.stringify(dto));
 
-  const fileList = Array.isArray(files) ? files : Object.values(files || {});
-  fileList.forEach(file => { if (file) formData.append("files", file); });
+  // Append files with exact keys so the backend Map<String, MultipartFile> works correctly
+  if (files && typeof files === 'object' && !Array.isArray(files)) {
+      Object.entries(files).forEach(([key, file]) => {
+          if (file) formData.append(key, file);
+      });
+  } else if (Array.isArray(files)) {
+      // Fallback if someone passes an array carelessly
+      files.forEach((file, index) => {
+          if (file) formData.append("file_" + index, file);
+      });
+  }
 
   const endpoint = token
     ? `/onboarding/submit?token=${encodeURIComponent(token)}`
