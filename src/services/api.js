@@ -27,15 +27,40 @@ api.interceptors.request.use((config) => {
 
 // ─── CORE METHODS ───────────────────────────────────────
 
+const MOCK_DATABASE = {
+  "/roles": "/api/mock/roles.json",
+  "/entities": "/api/mock/entities.json",
+  "/departments": "/api/mock/departments.json",
+  "/employees": "/api/mock/employees.json",
+  "/vendors": "/api/mock/vendors.json",
+  "/assets": "/api/mock/assets.json"
+};
+
 export const safeGet = async (url) => {
   try {
     const res = await api.get(url);
     const data = res.data;
-    // Return inner data if wrapped, else return whole object
     if (data?.data) return data.data;
     return data;
   } catch (err) {
-    console.error(`❌ GET ERROR [${url}]`, err.response?.status, err.message);
+    const status = err.response?.status;
+    
+    // 🚀 FAILOVER LOGIC
+    // If server is 404, 500 or Timed Out, try the mock fallback
+    const cleanUrl = url.split('?')[0]; // Strip query params for mapping
+    const mockPath = MOCK_DATABASE[cleanUrl];
+
+    if (mockPath) {
+      console.warn(`⚠️ [FAILOVER] API ${url} failed (Status: ${status || 'TIMEOUT'}). Switching to MOCK: ${mockPath}`);
+      try {
+        const mockRes = await axios.get(mockPath);
+        return mockRes.data?.data ?? mockRes.data;
+      } catch (mockErr) {
+        console.error(`❌ [MOCK FAIL] Both Live and Mock failed for ${url}`);
+      }
+    }
+
+    console.error(`❌ GET ERROR [${url}] Status: ${status}`, err.response?.data || err.message);
     throw err;
   }
 };
@@ -165,9 +190,7 @@ const ApiService = {
    * Do NOT strip or guess the data shape here.
    */
   getEmployees: async (page = 0, size = 20) => {
-    const res = await api.get(`/employees?page=${page}&size=${size}`);
-    // Backend wraps response in { status: "SUCCESS", data: { content: [...] } }
-    return res.data?.data ?? res.data;
+    return safeGet(`/employees?page=${page}&size=${size}`);
   },
 
   getEmployeeDetail: async (id) => {

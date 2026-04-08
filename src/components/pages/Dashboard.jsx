@@ -10,6 +10,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import apiService from '../../services/api';
+import { normalizeEmployeeList } from '../../utils/normalizeEmployee';
 
 const Dashboard = () => {
   const navigate = useNavigate();

@@ -694,7 +694,7 @@ const EmployeeOnboardingForm = () => {
         return {
             institutionName: edu.school || edu.college || '',
             hallTicketNumber: edu.htNumber || '',
-            passoutYear: edu.year || '',
+            passoutYear: edu.year ? Number(edu.year) : null,
             percentage: edu.percentage || '',
             certificateFilePath: getFileInfo(edu.certificate, "Edu Cert"),
             marksMemoFilePath: getFileInfo(edu.marksMemo, "Edu Marks")
@@ -829,12 +829,13 @@ const EmployeeOnboardingForm = () => {
                     id: documents.id || null,
                     panNumber: (documents.panNumber || '').replace(/\s+/g, '').toUpperCase(),
                     panFilePath: documents.panCardPath || getFileInfo(documents.panCard, "PAN Card"),
-                    aadhaarNumber: (documents.aadharNumber || '').replace(/\s+/g, ''),
-                    aadhaarFilePath: documents.aadharCardPath || getFileInfo(documents.aadharCard, "Aadhar Card"),
                     photoFilePath: documents.passportPhotoPath || getFileInfo(documents.passportPhoto, "Photo"),
                     passportFilePath: documents.passportDocPath || getFileInfo(documents.passportDoc, "Passport"),
                     voterIdFilePath: documents.voterIdPath || getFileInfo(documents.voterId, "Voter ID"),
-                    status: 'PENDING'
+                },
+                aadharProof: {
+                    aadhaarNumber: (documents.aadharNumber || '').replace(/\s+/g, ''),
+                    aadhaarFilePath: documents.aadharCardPath || getFileInfo(documents.aadharCard, "Aadhar Card"),
                 },
             };
 

@@ -1,0 +1,22 @@
+{
+  "id": 1,
+  "empId": null,
+  "fullName": "Multipart Tester",
+  "dept": "Engineering",
+  "role": "Developer",
+  "entity": "FIS",
+  "dateOfBirth": "1990-01-01",
+  "dateOfInterview": null,
+  "dateOfOnboarding": "2026-04-01",
+  "email": "multipart_1775052682800@test.com",
+  "phone": "0000000000",
+  "status": "ONBOARDING",
+  "onboardingToken": "5qirrWEgu87UZEegMsr_EcIrFbORgpYz20HImDcU20I",
+  "onboardingForm": null,
+  "activatedAt": null,
+  "rejectedDocuments": [],
+  "reviewRemarks": null,
+  "reviewedAt": null,
+  "createdAt": "2026-04-01T14:11:21",
+  "updatedAt": "2026-04-01T14:11:30"
+}

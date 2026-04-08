@@ -1,0 +1,29 @@
+{
+  "status": "SUCCESS",
+  "data": {
+    "content": [
+      {
+        "id": 1,
+        "fullName": "Sandeep Akula",
+        "email": "sandeep@example.com",
+        "status": "Active",
+        "dept": { "deptName": "IT" },
+        "role": { "roleName": "Developer" },
+        "entity": { "entityName": "FIS" }
+      },
+      {
+        "id": 2,
+        "fullName": "Ishan",
+        "email": "ishan@example.com",
+        "status": "Active",
+        "dept": { "deptName": "HR" },
+        "role": { "roleName": "Manager" },
+        "entity": { "entityName": "FIS" }
+      }
+    ],
+    "totalPages": 1,
+    "totalElements": 2,
+    "size": 20,
+    "number": 0
+  }
+}
