@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, User, Search, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import apiService from '../../../services/api';
+import { normalizeEmployeeList } from '../../../utils/normalizeEmployee';
 
 const AssignAssetModal = ({ isOpen, onClose, onAssign, assetName }) => {
     const [step, setStep] = useState('prompt'); // 'prompt' | 'search' | 'confirm'
@@ -16,9 +17,10 @@ const AssignAssetModal = ({ isOpen, onClose, onAssign, assetName }) => {
             const fetchEmployees = async () => {
                 setLoading(true);
                 try {
-                    // API returns pre-normalized flat array
-                    const list = await apiService.getEmployees();
-                    setEmployees(list);
+                    // Standard Pattern: normalize at call-site
+                    const res = await apiService.getEmployees(0, 1000); // Fetch all for lookup
+                    const list = normalizeEmployeeList(res);
+                    setEmployees(list || []);
                 } catch (err) {
                     console.error('Failed to fetch employees:', err);
                 } finally {

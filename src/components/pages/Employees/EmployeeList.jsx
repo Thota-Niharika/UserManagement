@@ -16,6 +16,7 @@ import ViewEmployeeModal from './ViewEmployeeModal';
 import apiService from '../../../services/api';
 import Toast from '../../common/Toast';
 import { buildFileUrl } from '../../../utils/file';
+import { normalizeEmployeeList } from '../../../utils/normalizeEmployee';
 
 const EmployeeList = () => {
   const navigate = useNavigate();
@@ -40,6 +41,11 @@ const EmployeeList = () => {
   const [roles, setRoles] = useState([]);
   const [entities, setEntities] = useState([]);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  // ADD these 3 lines near the other useState declarations
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
+  const PAGE_SIZE = 20;
 
   const getDeptName = d => d.deptName || d.name || d.departmentName || d;
   const getRoleName = r => r.roleName || r.name || r;
@@ -87,38 +93,92 @@ const EmployeeList = () => {
     };
   };
 
-  const fetchData = async () => {
+  // const fetchData = async () => {
+  //   try {
+  //     setLoading(true);
+
+  //     const [deptRes, roleRes, entRes, empList] = await Promise.all([
+  //       apiService.getDepartments(),
+  //       apiService.getRoles(),
+  //       apiService.getEntities(),
+  //       apiService.getEmployees(0, 10)
+  //     ]);
+
+  //     setDepartments(ensureArray(deptRes, 'Departments'));
+  //     setRoles(ensureArray(roleRes, 'Roles'));
+  //     setEntities(ensureArray(entRes, 'Entities'));
+
+  //     // empList is guaranteed to be an array by the API layer (safeGet returns [])
+  //     const decorated = (empList || []).map(decorateEmployee).filter(Boolean);
+  //     setEmployees(decorated);
+  //     setLoading(false);
+  //   } catch (e) {
+  //     console.error('❌ [fetchData] Unexpected error:', e);
+  //     setLoading(false);
+  //     setToast({ show: true, message: `System error. Please try again.`, type: 'error' });
+  //   }
+  // };
+
+  const fetchData = async (page = 0) => {
     try {
       setLoading(true);
-
-      const [deptRes, roleRes, entRes, empList] = await Promise.all([
+      const [deptRes, roleRes, entRes, response] = await Promise.all([
         apiService.getDepartments(),
         apiService.getRoles(),
         apiService.getEntities(),
-        apiService.getEmployees(0, 10)
+        apiService.getEmployees(page, PAGE_SIZE),
       ]);
+
+      console.log("DEBUG - RESPONSE TYPE:", typeof response);
+      console.log("DEBUG - RESPONSE KEYS:", response ? Object.keys(response) : 'N/A');
+      console.log("API DATA (Raw):", response);
+
+      // ✅ FINAL CLEAN EXTRACTION
+      let parsed = response;
+      if (typeof parsed === "string") {
+        try {
+          parsed = JSON.parse(parsed);
+        } catch {
+          parsed = [];
+        }
+      }
+
+      const rawList = Array.isArray(parsed)
+        ? parsed
+        : parsed?.content || parsed?.employees || parsed?.data || [];
+
+      console.log("🔍 Full Raw Response:", rawList);
+      if (rawList && rawList.length > 0) {
+          console.log("🔍 First Employee Object:", JSON.stringify(rawList[0], null, 2));
+      }
+
+      const normalized = normalizeEmployeeList(rawList);
+      console.log("Normalized:", normalized);
 
       setDepartments(ensureArray(deptRes, 'Departments'));
       setRoles(ensureArray(roleRes, 'Roles'));
       setEntities(ensureArray(entRes, 'Entities'));
 
-      // empList is guaranteed to be an array by the API layer (safeGet returns [])
-      const decorated = (empList || []).map(decorateEmployee).filter(Boolean);
+      const decorated = (normalized || []).map(decorateEmployee).filter(Boolean);
+      
       setEmployees(decorated);
+      setTotalPages(response.totalPages ?? 1);
+      setTotalElements(response.totalElements ?? (response.content?.length || decorated.length));
+      setCurrentPage(response.number ?? page);
+      
       setLoading(false);
-    } catch (e) {
-      console.error('❌ [fetchData] Unexpected error:', e);
+    } catch (err) {
+      console.error("❌ [fetchData]", err);
       setLoading(false);
-      setToast({ show: true, message: `System error. Please try again.`, type: 'error' });
+      setToast({ show: true, message: `Failed to load: ${err.message}`, type: 'error' });
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(0); }, []);
 
-  const handleAddEmployee = async (newEmployee) => {
+  const handleAddEmployee = (createdEmployee) => {
     try {
-      const createdEmployee = await apiService.createEmployee(newEmployee);
-      console.log("[DEBUG] Backend Response (createEmployee):", createdEmployee);
+      console.log("[DEBUG] Received created employee from modal:", createdEmployee);
 
       if (!createdEmployee) {
         throw new Error("Failed to create employee: No data returned from server.");
@@ -158,10 +218,10 @@ const EmployeeList = () => {
         }
       }
 
-      setToast({ 
-        show: true, 
-        message: friendlyMessage, 
-        type: 'error' 
+      setToast({
+        show: true,
+        message: friendlyMessage,
+        type: 'error'
       });
       throw error; // Re-throw so AddEmployeeModal can keep form open
     }
@@ -173,7 +233,7 @@ const EmployeeList = () => {
       if (!empId) throw new Error("No employee selected for update.");
 
       const updated = await apiService.updateEmployee(empId, updatedEmployee);
-      
+
       if (!updated) {
         throw new Error("Failed to update employee: No data returned from server.");
       }
@@ -184,10 +244,10 @@ const EmployeeList = () => {
       setToast({ show: true, message: 'Employee updated successfully!', type: 'success' });
     } catch (error) {
       console.error("❌ [handleUpdateEmployee Error]:", error);
-      setToast({ 
-        show: true, 
-        message: 'Failed to update: ' + (error.message || 'System error'), 
-        type: 'error' 
+      setToast({
+        show: true,
+        message: 'Failed to update: ' + (error.message || 'System error'),
+        type: 'error'
       });
     }
   };
@@ -328,6 +388,9 @@ const EmployeeList = () => {
   const statusesList = ['All', 'Active', 'Onboarding', 'Inactive'];
   const departmentsList = ['All', ...departments.map(getDeptName)];
   const entitiesList = ['All', ...entities.map(getEntityName)];
+
+  console.log("FINAL RENDER - filteredEmployees count:", filteredEmployees.length);
+  console.log("FINAL RENDER - loading status:", loading);
 
   return (
     <div className="employees-page">

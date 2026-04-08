@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Package, Tag, ArrowRightLeft, MessageSquare, Image as ImageIcon, Camera, User, Building2, FileText, UploadCloud, CheckCircle } from 'lucide-react';
 import apiService from '../../../services/api';
 import { buildFileUrl } from '../../../utils/file';
+import { normalizeEmployeeList } from '../../../utils/normalizeEmployee';
 
 const AddAssetModal = ({ isOpen, onClose, onAdd }) => {
     const [formData, setFormData] = useState({
@@ -102,9 +103,10 @@ const AddAssetModal = ({ isOpen, onClose, onAdd }) => {
         if (step === 'assign' && employees.length === 0) {
             const fetchEmps = async () => {
                 try {
-                    // API returns pre-normalized flat array
-                    const list = await apiService.getEmployees();
-                    setEmployees(list);
+                    // Standard Pattern: normalize at call-site
+                    const res = await apiService.getEmployees(0, 1000); // Fetch all for lookup
+                    const list = normalizeEmployeeList(res);
+                    setEmployees(list || []);
                 } catch (err) {
                     console.error('Failed to fetch employees', err);
                 }

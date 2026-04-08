@@ -1,30 +1,19 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
+import apiService, { createEmployee } from '../../../services/api';
 
-const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = [], entities = [], employees = [] }) => {
+const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = [], entities = [] }) => {
     const [formData, setFormData] = useState({
-        name: '',
-        department: '',
+        fullName: '',
+        dept: '',
         entity: '',
         role: '',
         dateOfInterview: '',
         dateOfOnboarding: '',
         dateOfBirth: '',
         email: '',
-        phone: '',
-        status: 'ONBOARDING'
+        phone: ''
     });
-
-    const normalizePhone = (num) => num.replace(/\s/g, '').replace(/-/g, '');
-
-    const normalizedPhone = normalizePhone(formData.phone);
-    const existingEmail = employees.find(emp => emp.email?.toLowerCase() === formData.email.toLowerCase());
-    const existingPhone = employees.find(emp => {
-        const empPhone = emp.phone ? normalizePhone(emp.phone) : '';
-        return empPhone === normalizedPhone && normalizedPhone !== '';
-    });
-
-    const isDuplicate = !!(existingEmail || existingPhone);
 
     const getDeptName = d => d.deptName || d.name || d.departmentName || d;
     const getDeptCode = d => d.deptCode || d.deptId || d.id;
@@ -40,48 +29,64 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // Basic Validation
-        if (!formData.name || !formData.email || !formData.phone || !formData.department || !formData.role || !formData.entity) {
-            alert('Please fill in all required fields.');
+        // Build clean payload
+        const employeeData = {
+            fullName: formData.fullName?.trim(),
+            dept: formData.dept?.trim(),
+            role: formData.role?.trim(),
+            entity: formData.entity?.trim(),
+            dateOfBirth: formData.dateOfBirth,           // must be "yyyy-MM-dd"
+            dateOfOnboarding: formData.dateOfOnboarding, // must be "yyyy-MM-dd"
+            email: formData.email?.trim(),
+            phone: formData.phone?.trim().replace(/\D/g, ''), // keep only digits
+            dateOfInterview: formData.dateOfInterview || null,
+        };
+
+        // Basic validation before sending
+        if (!employeeData.fullName || 
+            !employeeData.dept || 
+            !employeeData.role || 
+            !employeeData.entity ||
+            !employeeData.dateOfBirth ||
+            !employeeData.dateOfOnboarding ||
+            !employeeData.email ||
+            employeeData.phone.length !== 10) {
+          
+            alert("Please fill all required fields correctly.\nPhone must be exactly 10 digits.");
             return;
         }
 
-        if (isDuplicate) {
-            alert('Cannot proceed: A duplicate email or phone number was detected.');
-            return;
-        }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(formData.email)) {
-            alert('Please enter a valid email address.');
-            return;
-        }
+        console.log("Sending employee data:", JSON.stringify(employeeData, null, 2));
 
         try {
-            // Await the API call — form stays open if it fails
-            await onAdd({
-                ...formData,
-                phone: normalizedPhone
-            });
-
-            // Only reset + close if onAdd succeeded (no throw)
+            const newEmployee = await createEmployee(employeeData); 
+            onAdd(newEmployee); 
+            
+            // Reset and close
             setFormData({
-                name: '',
-                department: '',
+                fullName: '',
+                dept: '',
                 entity: '',
                 role: '',
                 dateOfInterview: '',
                 dateOfOnboarding: '',
                 dateOfBirth: '',
                 email: '',
-                phone: '',
-                status: 'ONBOARDING'
+                phone: ''
             });
             onClose();
-        } catch (err) {
-            // Error is already toasted by EmployeeList.handleAddEmployee
-            // We intentionally do NOT close the form so the user can correct their input
-            console.error('[AddEmployeeModal] onAdd threw:', err.message);
+        } catch (error) {
+            console.error("Add employee failed:", error.response?.data || error.message);
+            
+            if (error.response?.status === 400) {
+                const errors = error.response.data;
+                const msg = Object.entries(errors)
+                    .map(([field, msg]) => `${field}: ${msg}`)
+                    .join("\n");
+                alert("Validation Error:\n" + msg);
+            } else {
+                alert("Failed to add employee. Please check the data and try again.");
+            }
         }
     };
 
@@ -110,8 +115,8 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                                 <label>Full Name</label>
                                 <input
                                     type="text"
-                                    name="name"
-                                    value={formData.name}
+                                    name="fullName"
+                                    value={formData.fullName}
                                     onChange={handleChange}
                                     required
                                     placeholder="Enter full name"
@@ -126,9 +131,7 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                                     onChange={handleChange}
                                     required
                                     placeholder="example@company.com"
-                                    className={existingEmail ? 'input-error' : ''}
                                 />
-                                {existingEmail && <span className="field-error">Email already exists in directory</span>}
                             </div>
                         </div>
 
@@ -136,8 +139,8 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                             <div className="form-group">
                                 <label>Department</label>
                                 <select
-                                    name="department"
-                                    value={formData.department}
+                                    name="dept"
+                                    value={formData.dept}
                                     onChange={handleChange}
                                     required
                                 >
@@ -184,7 +187,7 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                                     ))}
                                 </select>
                             </div>
-                             <div className="form-group">
+                            <div className="form-group">
                                 <label>Phone Number</label>
                                 <input
                                     type="tel"
@@ -192,10 +195,8 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                                     value={formData.phone}
                                     onChange={handleChange}
                                     required
-                                    placeholder="Enter phone number"
-                                    className={existingPhone ? 'input-error' : ''}
+                                    placeholder="Enter 10-digit number"
                                 />
-                                {existingPhone && <span className="field-error">Phone number already exists in directory</span>}
                             </div>
                         </div>
 
@@ -207,6 +208,7 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                                     name="dateOfBirth"
                                     value={formData.dateOfBirth}
                                     onChange={handleChange}
+                                    required
                                 />
                             </div>
                             <div className="form-group">
@@ -228,6 +230,7 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                                     name="dateOfOnboarding"
                                     value={formData.dateOfOnboarding}
                                     onChange={handleChange}
+                                    required
                                 />
                             </div>
                         </div>
@@ -235,16 +238,12 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
 
                     <div className="modal-footer">
                         <button type="button" className="secondary-btn" onClick={onClose}>Cancel</button>
-                        <button 
-                            type="submit" 
-                            className={`primary-btn ${isDuplicate ? 'disabled' : ''}`}
-                            disabled={isDuplicate}
-                        >
-                            {isDuplicate ? 'Conflict Detected' : 'Create Employee'}
+                        <button type="submit" className="primary-btn">
+                            Create Employee
                         </button>
                     </div>
                 </form>
-            </div >
+            </div>
 
             <style>{`
                 .modal-overlay {
@@ -305,6 +304,8 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                     display: flex;
                     align-items: center;
                     justify-content: center;
+                    border: none;
+                    cursor: pointer;
                 }
 
                 .close-btn:hover {
@@ -330,10 +331,6 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                     margin-bottom: 1rem;
                 }
 
-                .full-width {
-                    grid-column: span 2;
-                }
-
                 .form-group label {
                     font-size: 0.8125rem;
                     font-weight: 600;
@@ -356,23 +353,6 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
                 }
 
-                .input-error {
-                    border-color: #ef4444 !important;
-                }
-
-                .field-error {
-                    font-size: 0.75rem;
-                    color: #ef4444;
-                    font-weight: 500;
-                    margin-top: -0.25rem;
-                }
-
-                .primary-btn.disabled {
-                    background: #94a3b8;
-                    cursor: not-allowed;
-                    opacity: 0.7;
-                }
-
                 .modal-footer {
                     padding: 1.5rem;
                     background: var(--bg-main);
@@ -389,6 +369,8 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                     border-radius: 6px;
                     font-weight: 600;
                     font-size: 0.875rem;
+                    border: none;
+                    cursor: pointer;
                 }
 
                 .secondary-btn {
@@ -399,18 +381,16 @@ const AddEmployeeModal = ({ isOpen, onClose, onAdd, departments = [], roles = []
                     border-radius: 6px;
                     font-weight: 600;
                     font-size: 0.875rem;
+                    cursor: pointer;
                 }
 
                 @media (max-width: 640px) {
                     .form-row {
                         grid-template-columns: 1fr;
                     }
-                    .full-width {
-                        grid-column: span 1;
-                    }
                 }
             `}</style>
-        </div >
+        </div>
     );
 };
 

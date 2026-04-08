@@ -24,18 +24,19 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const [empList, vendorData, assetData] = await Promise.all([
-          apiService.getEmployees(), // ← Returns pre-normalized flat array
+        const [empRes, vendorData, assetData] = await Promise.all([
+          apiService.getEmployees(0, 1000), // Request a large size for dashboard totals if not using a separate stats API
           apiService.getVendors(),
           apiService.getAssets()
         ]);
 
+        const empList = normalizeEmployeeList(empRes);
         const vendorList = Array.isArray(vendorData) ? vendorData : (vendorData?.data || []);
         const assetList = Array.isArray(assetData) ? assetData : (assetData?.data || []);
 
         setEmployees(empList);
         setCounts({
-          employees: empList.length,
+          employees: empRes?.totalElements ?? empList.length,
           vendors: vendorList.length,
           assets: assetList.length
         });
@@ -52,9 +53,9 @@ const Dashboard = () => {
   }, []);
 
   const kpis = [
-    { title: 'Total Employees', value: counts.employees.toString(), icon: <UserSquare2 />, color: 'var(--success)', trend: 'Live', up: true },
-    { title: 'Active Vendors', value: counts.vendors.toString(), icon: <Truck />, color: 'var(--info)', trend: 'Live', up: true },
-    { title: 'Total Assets', value: counts.assets.toString(), icon: <Package />, color: 'var(--warning)', trend: 'Live', up: true },
+    { title: 'Total Employees', value: (counts.employees ?? 0).toString(), icon: <UserSquare2 />, color: 'var(--success)', trend: 'Live', up: true },
+    { title: 'Active Vendors', value: (counts.vendors ?? 0).toString(), icon: <Truck />, color: 'var(--info)', trend: 'Live', up: true },
+    { title: 'Total Assets', value: (counts.assets ?? 0).toString(), icon: <Package />, color: 'var(--warning)', trend: 'Live', up: true },
   ];
 
   return (

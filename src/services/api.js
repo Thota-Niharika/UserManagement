@@ -1,21 +1,98 @@
 import axios from "axios";
-import { API_BASE_URL } from '../config/api';
 import { normalizeEmployee, normalizeEmployeeList } from '../utils/normalizeEmployee';
 import { parseIfString } from '../utils/apiUtils';
 
-// --- CLEAN API EXPORTS ---
+// ─── CONFIG ─────────────────────────────────────────────
+export const API_BASE_URL = "/api";
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 120000,
+});
+
+// ─── INTERCEPTOR ────────────────────────────────────────
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+
+  // 🛡️ STEP 1: TOKEN TEMPORARILY DISABLED FOR DEBUGGING 403
+  // To re-enable, uncomment the block below.
+  /*
+  if (token && token !== "null" && token !== "undefined" && token.length > 10) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  */
+
+  return config;
+});
+
+// ─── CORE METHODS ───────────────────────────────────────
+
+export const safeGet = async (url) => {
+  try {
+    const res = await api.get(url);
+    const data = res.data;
+    // Return inner data if wrapped, else return whole object
+    if (data?.data) return data.data;
+    return data;
+  } catch (err) {
+    console.error(`❌ GET ERROR [${url}]`, err.response?.status, err.message);
+    throw err;
+  }
+};
+
+export const safePost = async (url, payload) => {
+  try {
+    const isFormData = payload instanceof FormData;
+    const res = await api.post(url, payload, {
+      headers: isFormData ? {} : { "Content-Type": "application/json" }
+    });
+    const parsed = parseIfString(res.data);
+    return parsed?.data ?? parsed;
+  } catch (err) {
+    console.error(`❌ POST ERROR [${url}]`, err.response?.status, err.message);
+    throw err;
+  }
+};
+
+export const safePut = async (url, payload) => {
+  try {
+    const res = await api.put(url, payload);
+    const parsed = parseIfString(res.data);
+    return parsed?.data ?? parsed;
+  } catch (err) {
+    console.error(`❌ PUT ERROR [${url}]`, err.response?.status, err.message);
+    throw err;
+  }
+};
+
+export const safeDelete = async (url) => {
+  try {
+    await api.delete(url);
+    return true;
+  } catch (err) {
+    console.error(`❌ DELETE ERROR [${url}]`, err.response?.status, err.message);
+    throw err;
+  }
+};
+
+export const safePatch = async (url, payload) => {
+  try {
+    const res = await api.patch(url, payload);
+    const parsed = parseIfString(res.data);
+    return parsed?.data ?? parsed;
+  } catch (err) {
+    console.error(`❌ PATCH ERROR [${url}]`, err.response?.status, err.message);
+    throw err;
+  }
+};
+
+// ─── ONBOARDING (NAMED EXPORT) ──────────────────────────
 export const submitOnboarding = async (dto, files = [], token = null) => {
   const formData = new FormData();
+  formData.append("data", new Blob([JSON.stringify(dto)], { type: "application/json" }));
 
-  formData.append("data", new Blob([JSON.stringify(dto)], { type: 'application/json' }));
-
-  const fileList = Array.isArray(files)
-    ? files
-    : Object.values(files || {});
-
-  fileList.forEach((file) => {
-    if (file) formData.append("files", file);
-  });
+  const fileList = Array.isArray(files) ? files : Object.values(files || {});
+  fileList.forEach(file => { if (file) formData.append("files", file); });
 
   const endpoint = token
     ? `/onboarding/submit?token=${encodeURIComponent(token)}`
@@ -24,259 +101,43 @@ export const submitOnboarding = async (dto, files = [], token = null) => {
   return safePost(endpoint, formData);
 };
 
-// ─── HARDENED API CLIENT ──────────────────────────────────────────
+// ─── MAIN SERVICE ───────────────────────────────────────
 
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 120000,
-});
-
-/**
- * Core GET handler with automatic type-safety and error suppression.
- * NEVER CRASHES THE UI.
- */
-export const safeGet = async (url) => {
+export const createEmployee = async (employeeData) => {
   try {
-    const res = await api.get(url);
-    const data = res.data;
-
-    console.log("✅ RAW API RESPONSE:", data); // 👈 ADD THIS
-
-    if (!data) return null;
-
-    if (data.data) return data.data;
-    if (data.content) return data.content;
-    if (data.onboarding) return data.onboarding;
-
-    return data;
-
-  } catch (err) {
-    console.error("❌ API ERROR:", err.response?.data || err.message);
-    throw err; // 🔥 CRITICAL FIX (remove return [])
+    const response = await safePost('/employees', employeeData);
+    return normalizeEmployee(response); 
+  } catch (error) {
+    console.error("Create employee error:", error);
+    throw error;
   }
 };
-
-/**
- * Helper to extract a readable error message from Axios errors.
- */
-const getErrorMessage = (err) => {
-  const backendData = err.response?.data;
-  if (backendData && typeof backendData === 'object') {
-    return backendData.message || backendData.error || JSON.stringify(backendData);
-  }
-  return err.message || "Unknown API Error";
-};
-
-/**
- * Core POST handler.
- */
-export const safePost = async (url, payload) => {
-  try {
-    const isFormData = payload instanceof FormData;
-    const res = await api.post(url, payload, {
-      headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : { 'Content-Type': 'application/json' }
-    });
-    const parsed = parseIfString(res.data);
-    return parsed?.data ?? parsed;
-  } catch (err) {
-    const msg = getErrorMessage(err);
-    console.error(`❌ [API POST FAILED] ${url}:`, msg);
-    throw new Error(msg);
-  }
-};
-
-/**
- * Core PUT handler.
- */
-export const safePut = async (url, payload) => {
-  try {
-    const res = await api.put(url, payload);
-    const parsed = parseIfString(res.data);
-    return parsed?.data ?? parsed;
-  } catch (err) {
-    const msg = getErrorMessage(err);
-    console.error(`❌ [API PUT FAILED] ${url}:`, msg);
-    throw new Error(msg);
-  }
-};
-
-/**
- * Core DELETE handler.
- */
-export const safeDelete = async (url) => {
-  try {
-    await api.delete(url);
-    return true;
-  } catch (err) {
-    const msg = getErrorMessage(err);
-    console.error(`❌ [API DELETE FAILED] ${url}:`, msg);
-    throw new Error(msg);
-  }
-};
-
-/**
- * Core PATCH handler.
- */
-export const safePatch = async (url, payload) => {
-  try {
-    const res = await api.patch(url, payload);
-    const parsed = parseIfString(res.data);
-    return parsed?.data ?? parsed;
-  } catch (err) {
-    const msg = getErrorMessage(err);
-    console.error(`❌ [API PATCH FAILED] ${url}:`, msg);
-    throw new Error(msg);
-  }
-};
-
-// ─── SERVICE METHODS (Backward Compatibility) ─────────────────────
 
 const ApiService = {
   // --- DEPARTMENTS ---
   getDepartments: () => safeGet('/departments'),
-  createDepartment: (data) => safePost('/departments', {
-    deptCode: data.deptCode || data.deptId,
-    deptName: data.deptName
-  }),
-  updateDepartment: (id, data) => safePut(`/departments/${id}`, {
-    deptCode: data.deptCode || data.deptId,
-    deptName: data.deptName
-  }),
+  createDepartment: (d) => safePost('/departments', { deptCode: d.deptCode, deptName: d.deptName }),
+  updateDepartment: (id, d) => safePut(`/departments/${id}`, { deptCode: d.deptCode, deptName: d.deptName }),
   deleteDepartment: (id) => safeDelete(`/departments/${id}`),
 
   // --- ROLES ---
   getRoles: () => safeGet('/roles'),
-  createRole: (data) => safePost('/roles', {
-    roleCode: data.roleCode,
-    roleName: data.roleName
-  }),
-  updateRole: (id, data) => safePut(`/roles/${id}`, {
-    roleCode: data.roleCode,
-    roleName: data.roleName
-  }),
+  createRole: (r) => safePost('/roles', { roleCode: r.roleCode, roleName: r.roleName }),
+  updateRole: (id, r) => safePut(`/roles/${id}`, { roleCode: r.roleCode, roleName: r.roleName }),
   deleteRole: (id) => safeDelete(`/roles/${id}`),
 
   // --- ENTITIES ---
   getEntities: () => safeGet('/entities'),
-  createEntity: (data) => safePost('/entities', {
-    entityCode: data.entityCode,
-    entityName: data.entityName
-  }),
-  updateEntity: (id, data) => safePut(`/entities/${id}`, {
-    entityCode: data.entityCode,
-    entityName: data.entityName
-  }),
+  createEntity: (e) => safePost('/entities', { entityCode: e.entityCode, entityName: e.entityName }),
+  updateEntity: (id, e) => safePut(`/entities/${id}`, { entityCode: e.entityCode, entityName: e.entityName }),
   deleteEntity: (id) => safeDelete(`/entities/${id}`),
 
-  // --- EMPLOYEES (Normalized) ---
-  getEmployees: async (page = 0, size = 10) => {
-    const raw = await safeGet(`/employees?page=${page}&size=${size}`);
-    return normalizeEmployeeList(raw);
-  },
-  getEmployeeDetail: async (id) => {
-    const raw = await safeGet(`/employees/${id}`);
-    return normalizeEmployee(raw);
-  },
-  createEmployee: async (formData) => {
-    // 🛡️ SANITIZATION: Empty strings for dates cause 500s in Spring Boot
-    const payload = {
-      fullName: formData.name,
-      dept: formData.department,
-      role: formData.role,
-      entity: formData.entity,
-      dateOfOnboarding: formData.dateOfOnboarding || null,
-      dateOfInterview: formData.dateOfInterview || null,
-      dateOfBirth: formData.dateOfBirth || null,
-      email: formData.email,
-      phone: formData.phone,
-      status: formData.status || 'ONBOARDING'
-    };
-    console.log('📤 [createEmployee] Sending payload:', JSON.stringify(payload, null, 2));
-    const raw = await safePost('/employees/employees', payload);
-    return normalizeEmployee(raw);
-  },
-  updateEmployee: async (id, formData) => {
-    // 🛡️ SANITIZATION: Empty strings for dates cause 500s in Spring Boot
-    const payload = {
-      fullName: formData.name,
-      dept: formData.department,
-      entity: formData.entity,
-      role: formData.role,
-      dateOfOnboarding: formData.dateOfOnboarding || null,
-      dateOfInterview: formData.dateOfInterview || null,
-      dateOfBirth: formData.dateOfBirth || null,
-      email: formData.email,
-      phone: formData.phone,
-      status: formData.status || 'Active'
-    };
-    const raw = await safePut(`/employees/${id}`, payload);
-    return normalizeEmployee(raw);
-  },
-  deleteEmployee: (id) => safeDelete(`/employees/${id}`),
-  activateEmployee: (id) => safePatch(`/employees/${id}/activate`, {}),
-  deactivateEmployee: (id) => safePatch(`/employees/${id}/deactivate`, {}),
-
-  // --- ONBOARDING (FINAL CLEAN VERSION) ---
-
-  // ✅ ONLY ONE FUNCTION — SINGLE SOURCE OF TRUTH
-  // --- ONBOARDING ---
-
-  submitOnboarding: (dto, files, token) => {
-    return submitOnboarding(dto, files, token);
-  },
-
-  // ✅ FIXED: Now uses path variable (matches what backend expects)
-  getOnboardingByToken: async (token) => {
-    if (!token) {
-      console.warn("⚠️ getOnboardingByToken called without token");
-      return null;
-    }
-
-    const encodedToken = encodeURIComponent(token);
-
-    try {
-      // Primary call - using path parameter (this should fix the 500 error)
-      return await safeGet(`/onboarding/get-onboarding-by-token/${encodedToken}`);
-    } catch (err) {
-      console.warn("⚠️ Path parameter failed:", err.message || err);
-
-      // Optional fallback (if backend also supports query param)
-      try {
-        return await safeGet(`/onboarding/get-onboarding-by-token?token=${encodedToken}`);
-      } catch (fallbackErr) {
-        console.warn("⚠️ Query fallback also failed, trying details endpoint...");
-        // Last resort fallback
-        return safeGet(`/onboarding/details?token=${encodedToken}`);
-      }
-    }
-  },
-
-  reviewOnboarding: (data, token) => {
-    const endpoint = token
-      ? `/onboarding/review?token=${encodeURIComponent(token)}`
-      : "/onboarding/review";
-
-    return safePost(endpoint, data);
-  },
-
-  getOnboardingDetail: (id) => safeGet(`/onboarding/${id}`),
-  rejectOnboardingDocument: (employeeId, entityType, entityId) => {
-    return safePost('/onboarding/reject-document', { employeeId, entityType, entityId });
-  },
-
-  // --- VENDORS ---
-  getVendors: () => safeGet('/vendors'),
-  createVendor: (data) => safePost('/vendors', data),
-  updateVendor: (id, data) => safePut(`/vendors/${id}`, data),
-  deleteVendor: (id) => safeDelete(`/vendors/${id}`),
-
-  // --- VENDOR TYPES ---
+  // --- VENDOR/ASSET TYPES ---
   getVendorTypes: () => safeGet('/vendor-types'),
-  createVendorType: (data) => safePost('/vendor-types', { typeName: data.typeName || data.name }),
-  updateVendorType: (id, data) => safePut(`/vendor-types/${id}`, { typeName: data.typeName || data.name }),
+  createVendorType: (d) => safePost('/vendor-types', { typeName: d.typeName || d.name }),
+  updateVendorType: (id, d) => safePut(`/vendor-types/${id}`, { typeName: d.typeName || d.name }),
   deleteVendorType: (id) => safeDelete(`/vendor-types/${id}`),
 
-  // --- ASSET TYPES ---
   getAssetTypes: () => safeGet('/asset-types'),
   createAssetType: (data) => safePost('/asset-types', {
     typeName: data.typeName || data.name,
@@ -288,69 +149,94 @@ const ApiService = {
   }),
   deleteAssetType: (id) => safeDelete(`/asset-types/${id}`),
 
+  // --- EMPLOYEES ---
+  /**
+   * ✅ PROPER CONTRACT: Returns full pagination object (content, totalPages, number).
+   * Do NOT strip or guess the data shape here.
+   */
+  getEmployees: async (page = 0, size = 20) => {
+    const res = await api.get(`/employees?page=${page}&size=${size}`);
+    // Backend wraps response in { status: "SUCCESS", data: { content: [...] } }
+    return res.data?.data ?? res.data;
+  },
+
+  getEmployeeDetail: async (id) => {
+    const data = await safeGet(`/employees/${id}`);
+    return normalizeEmployee(data?.employee || data);
+  },
+
+  createEmployee,
+
+  updateEmployee: async (id, formData) => {
+    const payload = {
+      fullName: formData.name,
+      dept: { id: formData.department },
+      role: { id: formData.role },
+      entity: { id: formData.entity },
+      email: formData.email,
+      phone: formData.phone,
+      dateOfBirth: formData.dateOfBirth || null,
+      dateOfInterview: formData.dateOfInterview || null,
+      dateOfOnboarding: formData.dateOfOnboarding || null,
+      status: formData.status || 'Active'
+    };
+    const raw = await safePut(`/employees/${id}`, payload);
+    return normalizeEmployee(raw);
+  },
+
+  deleteEmployee: (id) => safeDelete(`/employees/${id}`),
+  activateEmployee: (id) => safePatch(`/employees/${id}/activate`, {}),
+  deactivateEmployee: (id) => safePatch(`/employees/${id}/deactivate`, {}),
+
+  // --- VENDORS ---
+  getVendors: () => safeGet('/vendors'),
+  createVendor: (v) => safePost('/vendors', v),
+  updateVendor: (id, v) => safePut(`/vendors/${id}`, v),
+  deleteVendor: (id) => safeDelete(`/vendors/${id}`),
+
   // --- ASSETS ---
   getAssets: () => safeGet('/assets'),
   createAsset: async (formData) => {
     const data = new FormData();
-    data.append('assetName', formData.assetName || formData.name);
-    data.append('assetTag', formData.assetTag || formData.tag);
-    data.append('receiverName', formData.receiverName || '');
-    data.append('exchangeType', formData.exchangeType || 'Issue');
-    data.append('vendorId', formData.vendorId || formData.vendor?.vendorId || '');
-    data.append('remarks', formData.remarks || '');
-    data.append('companyName', formData.companyName || '');
-    data.append('generation', formData.generation || '');
-    data.append('ram', formData.ram || '');
-    data.append('hardDisk', formData.hardDisk || '');
-    data.append('procurementType', formData.procurementType || 'Purchasing');
-    data.append('purchaseDate', formData.purchaseDate || '');
-    data.append('poNumber', formData.poNumber || '');
-    data.append('invoiceNumber', formData.invoiceNumber || '');
-    data.append('purchaseCost', formData.purchaseCost || '');
-    data.append('warrantyPeriod', formData.warrantyPeriod || '');
-    data.append('vendorContact', formData.vendorContact || '');
-    data.append('deliveryDate', formData.deliveryDate || '');
-    data.append('returnDate', formData.returnDate || '');
-    data.append('agreementNumber', formData.agreementNumber || '');
-    data.append('securityDeposit', formData.securityDeposit || '');
-    if (formData.customFields) data.append('customFields', JSON.stringify(formData.customFields));
-    if (formData.photoFiles) formData.photoFiles.forEach(file => data.append('files', file));
+    Object.keys(formData).forEach(key => {
+      if (key === 'photoFiles') {
+        formData.photoFiles.forEach(file => data.append('files', file));
+      } else if (key === 'customFields') {
+        data.append('customFields', JSON.stringify(formData.customFields));
+      } else {
+        data.append(key, formData[key] || '');
+      }
+    });
     return safePost('/assets', data);
   },
   updateAsset: (id, formData) => {
-    const payload = {
-      assetName: formData.assetName || formData.name,
-      assetTag: formData.assetTag || formData.tag,
-      receiverName: formData.receiverName || '',
-      exchangeType: formData.exchangeType || 'Issue',
-      remarks: formData.remarks || '',
-      companyName: formData.companyName || '',
-      generation: formData.generation || '',
-      ram: formData.ram || '',
-      hardDisk: formData.hardDisk || '',
-      procurementType: formData.procurementType || 'Purchasing',
-      purchaseDate: formData.purchaseDate || '',
-      poNumber: formData.poNumber || '',
-      invoiceNumber: formData.invoiceNumber || '',
-      purchaseCost: formData.purchaseCost || '',
-      warrantyPeriod: formData.warrantyPeriod || '',
-      vendorContact: formData.vendorContact || '',
-      deliveryDate: formData.deliveryDate || '',
-      returnDate: formData.returnDate || '',
-      agreementNumber: formData.agreementNumber || '',
-      securityDeposit: formData.securityDeposit || '',
-      customFields: formData.customFields || {}
-    };
     const vId = formData.vendorId || formData.vendor?.vendorId;
+    const payload = { ...formData };
     if (vId) payload.vendor = { vendorId: vId };
     return safePatch(`/assets/${id}`, payload);
   },
   deleteAsset: (id) => safeDelete(`/assets/${id}`),
 
+  // --- ONBOARDING ACTIONS ---
+  submitOnboarding,
+  getOnboardingByToken: (token) =>
+    safeGet(`/onboarding/get-onboarding-by-token/${encodeURIComponent(token)}`),
+
+  reviewOnboarding: (data, token) => {
+    const url = token ? `/onboarding/review?token=${encodeURIComponent(token)}` : "/onboarding/review";
+    return safePost(url, data);
+  },
+
+  getOnboardingDetail: (id) => safeGet(`/onboarding/${id}`),
+  rejectOnboardingDocument: (employeeId, entityType, entityId, remarks) => {
+    return safePost('/onboarding/reject-document', { employeeId, entityType, entityId, remarks: remarks || '' });
+  },
+
   getFileUrl: (path) => {
     if (!path) return null;
     const cleanPath = String(path).replace(/\\/g, '/').replace(/^\/+/, '');
-    return `${API_BASE_URL}/${cleanPath}`;
+    // Proxied URL for images
+    return `/api/${cleanPath}`;
   }
 };
 

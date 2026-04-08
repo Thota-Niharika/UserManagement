@@ -12,6 +12,7 @@
 
 // ─── HELPERS ─────────────────────────────────────────────────────
 
+
 function safeCopy(value, seen = new WeakSet()) {
     if (value === null || typeof value !== 'object') return value;
     if (seen.has(value)) return null;
@@ -24,6 +25,7 @@ function safeCopy(value, seen = new WeakSet()) {
     const result = {};
     for (const key in value) {
         if (['employeeForm', 'onboardingForm'].includes(key)) continue;
+        // if (['employeeForm'].includes(key)) continue;
         result[key] = safeCopy(value[key], seen);
     }
     return result;
@@ -132,31 +134,33 @@ export const normalizeEmployee = (rawEmp) => {
     }
 
     // Step 3: Identity Discovery (Array of proofs)
-    const identityProofs = Array.isArray(emp?.identityProofs) ? emp.identityProofs : 
-                          (Array.isArray(emp?.employee?.identityProofs) ? emp.employee.identityProofs : []);
+    const identityProofs = Array.isArray(emp?.identityProofs) ? emp.identityProofs :
+        (Array.isArray(emp?.employee?.identityProofs) ? emp.employee.identityProofs : []);
 
     // Step 4: Map fields via Scavenging
     const res = {
-        // Basic Info
-        id: (emp?.id || emp?.employeeId) ?? null,
-        employeeId: (emp?.id || emp?.employeeId) ?? null,
+        // Core Fields (Prioritizing Backend Entity mappings)
+        id: rawEmp.id || rawEmp.employeeId || emp.id || emp.employeeId || null,
+        name: rawEmp.fullName || rawEmp.name || emp.fullName || emp.name || 'Unknown',
+        email: rawEmp.email || emp.email || '',
+        status: rawEmp.status || emp.status || 'PENDING',
+
+        // Fallback info & Extensions
+        employeeId: rawEmp.id || rawEmp.employeeId || emp.id || emp.employeeId || null,
         empId: emp?.empId ?? "",
         empCode: scavengeValue(emp, 'empCode', 'employeeCode', 'employee.empCode', 'employee.employeeCode') ?? "",
-        name: scavengeValue(emp, 'fullName', 'name', 'personal.fullName', 'employee.fullName', 'personalDetails.fullName') ?? "Unknown",
-        email: scavengeValue(emp, 'email', 'personal.email', 'employee.email', 'personalDetails.email') ?? "",
         phone: scavengeValue(emp, 'phone', 'phoneNumber', 'personal.phoneNumber', 'employee.phone', 'personalDetails.phoneNumber') ?? "",
 
         // Dept/Role/Entity
-        deptName: scavengeValue(emp, 'deptName', 'departmentName', 'dept.deptName', 'employee.deptName') || 
-                  extractName(emp?.dept, 'deptName', 'departmentName') || 
-                  extractName(emp?.department, 'deptName', 'departmentName') || "None",
-        roleName: scavengeValue(emp, 'roleName', 'role.roleName', 'employee.roleName') || 
-                  extractName(emp?.role, 'roleName') || "None",
-        entityName: scavengeValue(emp, 'entityName', 'entity.entityName', 'employee.entityName') || 
-                    extractName(emp?.entity, 'entityName') || "None",
+        deptName: scavengeValue(emp, 'deptName', 'departmentName', 'dept.deptName', 'employee.deptName') ||
+            extractName(emp?.dept, 'deptName', 'departmentName') ||
+            extractName(emp?.department, 'deptName', 'departmentName') || "None",
+        roleName: scavengeValue(emp, 'roleName', 'role.roleName', 'employee.roleName') ||
+            extractName(emp?.role, 'roleName') || "None",
+        entityName: scavengeValue(emp, 'entityName', 'entity.entityName', 'employee.entityName') ||
+            extractName(emp?.entity, 'entityName') || "None",
 
-        // Status & Dates
-        status: (typeof emp?.status === 'string' ? emp.status : scavengeValue(emp, 'status', 'employee.status')) || "UNKNOWN",
+        // Other Statuses & Dates
         onboardingStatus: emp?.onboarding?.status || emp?.onboardingStatus || "NOT_STARTED",
         onboardingDate: formatDate(scavengeValue(emp, 'dateOfOnboarding', 'onboardingDate', 'employee.dateOfOnboarding', 'onboarding.onboardingDate')),
         dateOfInterview: formatDate(scavengeValue(emp, 'dateOfInterview', 'interviewDate', 'employee.dateOfInterview')),
@@ -165,10 +169,10 @@ export const normalizeEmployee = (rawEmp) => {
 
         // Identity
         panNumber: scavengeValue(emp, 'panNumber', 'panProof.panNumber', 'employee.panNumber', 'identityProof.panNumber', 'personal.panNumber') ||
-                  findProof(identityProofs, 'PAN')?.panNumber || "",
+            findProof(identityProofs, 'PAN')?.panNumber || "",
         aadharNumber: scavengeValue(emp, 'aadharNumber', 'aadhaarNumber', 'panProof.aadhaarNumber', 'employee.aadhaarNumber', 'identityProof.aadhaarNumber', 'personal.aadharNumber') ||
-                     findProof(identityProofs, 'AADHAR')?.aadhaarNumber || "",
-        
+            findProof(identityProofs, 'AADHAR')?.aadhaarNumber || "",
+
         // Paths
         photoPath: scavengePath(emp, 'photoPath', 'panProof.photoFilePath', 'personal.photoPath', 'employee.photoPath') || findProof(identityProofs, 'PHOTO')?.filePath || null,
         panPath: scavengePath(emp, 'panPath', 'panProof.panFilePath', 'employee.panPath', 'identityProof.panFilePath') || findProof(identityProofs, 'PAN')?.filePath || null,
@@ -207,7 +211,7 @@ export const normalizeEmployee = (rawEmp) => {
         otherCertificates: Array.isArray(emp?.otherCertificates) ? emp.otherCertificates : (Array.isArray(emp?.education?.otherCertificates) ? emp.education.otherCertificates : []),
         internships: Array.isArray(emp?.internships) ? emp.internships : (Array.isArray(emp?.employee?.internships) ? emp.employee.internships : []),
         workExperiences: Array.isArray(emp?.workExperiences || emp?.workHistory) ? (emp.workExperiences || emp.workHistory) : (Array.isArray(emp?.employee?.workExperiences) ? emp.employee.workExperiences : []),
-        
+
         // Metadata
         identityProofs: identityProofs,
         educationCount: Number(emp?.educationCount ?? 0),
@@ -222,15 +226,63 @@ export const normalizeEmployee = (rawEmp) => {
     return res;
 };
 
+// export const normalizeEmployeeList = (data) => {
+//     let rawList = [];
+//     if (Array.isArray(data)) {
+//         rawList = data;
+//     } else if (data && Array.isArray(data.content)) {
+//         rawList = data.content;
+//     } else if (data && Array.isArray(data.data)) {
+//         rawList = data.data;
+//     } else {
+//         console.warn('⚠️ [normalizeEmployeeList] Unexpected data shape:', data);
+//         return [];
+//     }
+
+//     return rawList
+//         .filter(item => {
+//             if (!item || typeof item !== 'object') return false;
+//             if (item.status === 500 || item.error === 'Internal Server Error') return false;
+//             // return item.id || item.empId || item.fullName || item.name;
+//             // return item.id != null || item.empId != null || item.fullName || item.name;
+//             return item && typeof item === 'object';
+//         })
+//         .map(raw => {
+//             try {
+//                 return normalizeEmployee(raw);
+//             } catch (err) {
+//                 console.error('⚠️ [normalizeEmployeeList] Skipping broken record:', raw, err);
+//                 return null;
+//             }
+//         })
+//         .filter(Boolean);
+// };
+
+
 export const normalizeEmployeeList = (data) => {
     let rawList = [];
+
+    // CASE 1: Direct array
     if (Array.isArray(data)) {
         rawList = data;
-    } else if (data && Array.isArray(data.content)) {
+    }
+
+    // CASE 2: Spring pageable
+    else if (data?.content && Array.isArray(data.content)) {
         rawList = data.content;
-    } else if (data && Array.isArray(data.data)) {
+    }
+
+    // CASE 3: Wrapped in data
+    else if (data?.data && Array.isArray(data.data)) {
         rawList = data.data;
-    } else {
+    }
+
+    // ✅ CASE 4: YOUR BACKEND STRUCTURE (THIS WAS MISSING)
+    else if (data?.employees && Array.isArray(data.employees)) {
+        rawList = data.employees;
+    }
+
+    else {
         console.warn('⚠️ [normalizeEmployeeList] Unexpected data shape:', data);
         return [];
     }
@@ -239,13 +291,13 @@ export const normalizeEmployeeList = (data) => {
         .filter(item => {
             if (!item || typeof item !== 'object') return false;
             if (item.status === 500 || item.error === 'Internal Server Error') return false;
-            return item.id || item.empId || item.fullName || item.name;
+            return item.id != null || item.empId != null || item.fullName || item.name;
         })
         .map(raw => {
             try {
                 return normalizeEmployee(raw);
             } catch (err) {
-                console.error('⚠️ [normalizeEmployeeList] Skipping broken record:', raw, err);
+                console.error('⚠️ Skipping broken record:', raw, err);
                 return null;
             }
         })

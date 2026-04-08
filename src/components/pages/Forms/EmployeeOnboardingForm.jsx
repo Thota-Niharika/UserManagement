@@ -237,9 +237,12 @@ const EmployeeOnboardingForm = () => {
             // Relaxed: fatherPhone and motherPhone no longer strictly required to prevent friction
             const required = ['fullName', 'phone', 'email', 'dateOfBirth', 'permAddress', 'presAddress', 'fatherName', 'motherName', 'emergencyName', 'emergencyRel', 'emergencyPhone'];
             for (const field of required) {
-                if (!personal[field]) {
+                if (!personal[field] || personal[field].trim() === '') {
                     newErrors[field] = 'This field is required';
                 }
+            }
+            if (personal.fullName && personal.fullName.trim().length < 3) {
+                newErrors['fullName'] = 'Full Name must be at least 3 characters';
             }
         } else if (currentStep === 2) {
             const levels = ['ssc', 'inter', 'grad'];
@@ -701,6 +704,13 @@ const EmployeeOnboardingForm = () => {
     const handleSubmit = async (e) => {
         if (e) e.preventDefault();
 
+        // Ensure all early steps are actually valid before hitting the backend
+        if (!validateStep(1)) {
+            alert("Errors found in Personal Details section. Please fix them.");
+            setStep(1);
+            return;
+        }
+
         if (!validateStep(5)) {
             alert("Please fix the validation errors before submitting.");
             setStep(5);
@@ -723,20 +733,20 @@ const EmployeeOnboardingForm = () => {
 
             // --- Revert: Use JSON DTO + Files (Resolves 'Required part data is not present') ---
             const dto = {
-                fullName: personal.fullName,
-                email: personal.email,
-                phoneNumber: personal.phone,
+                fullName: (personal.fullName || '').trim(),
+                email: (personal.email || '').trim(),
+                phoneNumber: (personal.phone || '').trim(),
                 dateOfBirth: personal.dateOfBirth,
                 bloodGroup: personal.bloodGroup,
-                permanentAddress: personal.permAddress,
-                presentAddress: personal.presAddress,
-                fathersName: personal.fatherName,
-                fathersPhone: personal.fatherPhone || null,
-                mothersName: personal.motherName,
-                mothersPhone: personal.motherPhone || null,
-                emergencyContactName: personal.emergencyName,
-                emergencyRelationship: personal.emergencyRel,
-                emergencyNumber: personal.emergencyPhone,
+                permanentAddress: (personal.permAddress || '').trim(),
+                presentAddress: (personal.presAddress || '').trim(),
+                fathersName: (personal.fatherName || '').trim(),
+                fathersPhone: (personal.fatherPhone || '').trim() || null,
+                mothersName: (personal.motherName || '').trim(),
+                mothersPhone: (personal.motherPhone || '').trim() || null,
+                emergencyContactName: (personal.emergencyName || '').trim(),
+                emergencyRelationship: (personal.emergencyRel || '').trim(),
+                emergencyNumber: (personal.emergencyPhone || '').trim(),
 
                 ssc: {
                     id: education.ssc.id || null,
@@ -861,15 +871,32 @@ const EmployeeOnboardingForm = () => {
             if (isNewFile(documents.passportDoc)) fileList.push(documents.passportDoc);
             if (isNewFile(documents.voterId)) fileList.push(documents.voterId);
 
-            console.log("🚀 Submitting clean multipart payload. DTO:", dto, "Files:", fileList.length);
+            console.log("🚀 Submitting clean multipart payload.");
+            console.log("Token used:", submitToken);
+            console.log("Full payload (DTO):", JSON.stringify(dto, null, 2));
+            console.log("Files attached:", fileList.map(f => f.name));
 
             const response = await submitOnboarding(dto, fileList, submitToken);
 
             console.log("✅ Onboarding Submit Success:", response);
             setStep(7);
         } catch (error) {
-            console.error("❌ Submission Failed:", error);
-            alert(`Submission failed: ${error.message}`);
+            console.error("❌ Submission Failed Details:", {
+              status: error.response?.status,
+              data: error.response?.data,
+              message: error.message,
+              token: submitToken
+            });
+        
+            let userMessage = "Submission failed. Please try again.";
+        
+            if (error.response?.status === 400) {
+              userMessage = "Invalid data: " + JSON.stringify(error.response.data);
+            } else if (error.response?.status === 500) {
+              userMessage = "Server error. Check if all required fields are filled correctly.";
+            }
+        
+            alert(userMessage);
         } finally {
             setLoading(false);
         }
