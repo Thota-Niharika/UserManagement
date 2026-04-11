@@ -535,21 +535,21 @@ const ViewEmployeeModal = ({ isOpen, onClose, employee, onApprove, onRejectDocum
                                 ))}
                                 {emp.otherCertificates && emp.otherCertificates.map((cert, i) => (
                                     <React.Fragment key={`other-${i}`}>
-                                        {renderDocCard(`Cert: ${cert.certificateNumber || 'Record ' + (i + 1)}`, { ...cert, filePath: cert.certificatePath, entityType: 'CERTIFICATION', id: cert.certificateId || cert.id || i }, `otherCertificates[${i}].certificatePath`)}
+                                        {renderDocCard(`Cert: ${cert.certificateNumber || 'Record ' + (i + 1)}`, { ...cert, filePath: cert.certificateFilePath || cert.certificatePath || cert.filePath, entityType: 'CERTIFICATION', id: cert.certificateId || cert.id || i }, `otherCertificates[${i}].certificatePath`)}
                                     </React.Fragment>
                                 ))}
                                 {emp.internships && emp.internships.map((int, i) => (
                                     <React.Fragment key={`int-${i}`}>
-                                        {int.offerLetterPath && renderDocCard(`Intern Offer (${int.companyName})`, { ...int, filePath: int.offerLetterPath, entityType: 'INTERNSHIP', id: int.internshipId || int.id || i }, `internship_offer_file_${i}`)}
-                                        {int.experienceCertificatePath && renderDocCard(`Intern Cert (${int.companyName})`, { ...int, filePath: int.experienceCertificatePath, entityType: 'INTERNSHIP', id: int.internshipId || int.id || i }, `internship_cert_file_${i}`)}
+                                        {int.offerLetterPath && renderDocCard(`Intern Offer (${int.companyName})`, { ...int, filePath: int.offerLetterFilePath || int.offerLetterPath, entityType: 'INTERNSHIP', id: int.internshipId || int.id || i }, `internship_offer_file_${i}`)}
+                                        {int.experienceCertificatePath && renderDocCard(`Intern Cert (${int.companyName})`, { ...int, filePath: int.experienceCertificateFilePath || int.experienceCertificatePath, entityType: 'INTERNSHIP', id: int.internshipId || int.id || i }, `internship_cert_file_${i}`)}
                                     </React.Fragment>
                                 ))}
                                 {emp.workExperiences && emp.workExperiences.map((work, i) => (
                                     <React.Fragment key={`exp-${i}`}>
-                                        {work.offerLetterPath && renderDocCard(`Work Offer (${work.companyName})`, { ...work, filePath: work.offerLetterPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_offer_file_${i}`)}
-                                        {work.relievingLetterPath && renderDocCard(`Relieving Letter (${work.companyName})`, { ...work, filePath: work.relievingLetterPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_relieving_file_${i}`)}
-                                        {work.payslipsPath && renderDocCard(`Payslips (${work.companyName})`, { ...work, filePath: work.payslipsPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_payslips_file_${i}`)}
-                                        {work.experienceCertificatePath && renderDocCard(`Exp Cert (${work.companyName})`, { ...work, filePath: work.experienceCertificatePath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_exp_cert_file_${i}`)}
+                                        {work.offerLetterPath && renderDocCard(`Work Offer (${work.companyName})`, { ...work, filePath: work.offerLetterFilePath || work.offerLetterPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_offer_file_${i}`)}
+                                        {work.relievingLetterPath && renderDocCard(`Relieving Letter (${work.companyName})`, { ...work, filePath: work.relievingLetterFilePath || work.relievingLetterPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_relieving_file_${i}`)}
+                                        {work.payslipsPath && renderDocCard(`Payslips (${work.companyName})`, { ...work, filePath: work.payslipsFilePath || work.payslipsPath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_payslips_file_${i}`)}
+                                        {work.experienceCertificatePath && renderDocCard(`Exp Cert (${work.companyName})`, { ...work, filePath: work.experienceCertificateFilePath || work.experienceCertificatePath, entityType: 'WORK_EXPERIENCE', id: work.workExperienceId || work.id || i }, `work_exp_cert_file_${i}`)}
                                     </React.Fragment>
                                 ))}
                             </div>

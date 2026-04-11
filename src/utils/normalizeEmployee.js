@@ -147,8 +147,8 @@ export const normalizeEmployee = (rawEmp) => {
 
         // Fallback info & Extensions
         employeeId: rawEmp.id || rawEmp.employeeId || emp.id || emp.employeeId || null,
-        empId: emp?.empId ?? "",
-        empCode: scavengeValue(emp, 'empCode', 'employeeCode', 'employee.empCode', 'employee.employeeCode') ?? "",
+        empId: scavengeValue(emp, 'empId', 'employeeId', 'id') ?? "",
+        empCode: scavengeValue(emp, 'empCode', 'employeeCode', 'empId', 'emp_code', 'employee_code', 'employee.empCode', 'employee.employeeCode') ?? "",
         phone: scavengeValue(emp, 'phone', 'phoneNumber', 'personal.phoneNumber', 'employee.phone', 'personalDetails.phoneNumber') ?? "",
 
         // Dept/Role/Entity

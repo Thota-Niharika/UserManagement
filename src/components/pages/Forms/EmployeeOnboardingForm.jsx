@@ -138,10 +138,10 @@ const EmployeeOnboardingForm = () => {
                 id: cert.id || null,
                 institute: cert.instituteName || cert.institute || '',
                 certNumber: cert.certificateNumber || cert.certNumber || '',
-                certificate: scavengePath(cert, 'certificatePath', 'certificate') ? {
-                    name: scavengePath(cert, 'certificatePath', 'certificate').split('/').pop(),
+                certificate: scavengePath(cert, 'certificateFilePath', 'certificatePath', 'certificate') ? {
+                    name: scavengePath(cert, 'certificateFilePath', 'certificatePath', 'certificate').split('/').pop(),
                     isServerFile: true,
-                    path: scavengePath(cert, 'certificatePath', 'certificate')
+                    path: scavengePath(cert, 'certificateFilePath', 'certificatePath', 'certificate')
                 } : null,
             })),
         });
@@ -157,27 +157,27 @@ const EmployeeOnboardingForm = () => {
                 relieving: i.relievingDate || '',
                 id: i.internshipId || i.id || '',
                 duration: i.duration || '',
-                offerLetter: i.offerLetterPath ? { 
-                    name: String(i.offerLetterPath).split('/').pop(), isServerFile: true, path: i.offerLetterPath 
+                offerLetter: (i.offerLetterFilePath || i.offerLetterPath) ? { 
+                    name: String(i.offerLetterFilePath || i.offerLetterPath).split('/').pop(), isServerFile: true, path: i.offerLetterFilePath || i.offerLetterPath 
                 } : null,
-                relievingLetter: i.experienceCertificatePath ? { 
-                    name: String(i.experienceCertificatePath).split('/').pop(), isServerFile: true, path: i.experienceCertificatePath 
+                relievingLetter: (i.experienceCertificateFilePath || i.experienceCertificatePath) ? { 
+                    name: String(i.experienceCertificateFilePath || i.experienceCertificatePath).split('/').pop(), isServerFile: true, path: i.experienceCertificateFilePath || i.experienceCertificatePath 
                 } : null,
             })),
             workHistory: work.map(w => ({
                 company: w.companyName || '',
                 years: w.yearsOfExp || '',
-                offerLetter: w.offerLetterPath ? { 
-                    name: String(w.offerLetterPath).split('/').pop(), isServerFile: true, path: w.offerLetterPath 
+                offerLetter: (w.offerLetterFilePath || w.offerLetterPath) ? { 
+                    name: String(w.offerLetterFilePath || w.offerLetterPath).split('/').pop(), isServerFile: true, path: w.offerLetterFilePath || w.offerLetterPath 
                 } : null,
-                relievingLetter: w.relievingLetterPath ? { 
-                    name: String(w.relievingLetterPath).split('/').pop(), isServerFile: true, path: w.relievingLetterPath 
+                relievingLetter: (w.relievingLetterFilePath || w.relievingLetterPath) ? { 
+                    name: String(w.relievingLetterFilePath || w.relievingLetterPath).split('/').pop(), isServerFile: true, path: w.relievingLetterFilePath || w.relievingLetterPath 
                 } : null,
-                payslips: w.payslipsPath ? { 
-                    name: String(w.payslipsPath).split('/').pop(), isServerFile: true, path: w.payslipsPath 
+                payslips: (w.payslipsFilePath || w.payslipsPath) ? { 
+                    name: String(w.payslipsFilePath || w.payslipsPath).split('/').pop(), isServerFile: true, path: w.payslipsFilePath || w.payslipsPath 
                 } : null,
-                experienceCert: w.experienceCertificatePath ? { 
-                    name: String(w.experienceCertificatePath).split('/').pop(), isServerFile: true, path: w.experienceCertificatePath 
+                experienceCert: (w.experienceCertificateFilePath || w.experienceCertificatePath) ? { 
+                    name: String(w.experienceCertificateFilePath || w.experienceCertificatePath).split('/').pop(), isServerFile: true, path: w.experienceCertificateFilePath || w.experienceCertificatePath 
                 } : null,
             }))
         });
@@ -789,7 +789,7 @@ const EmployeeOnboardingForm = () => {
                     id: cert.id || null,
                     instituteName: cert.institute,
                     certificateNumber: cert.certNumber,
-                    certificatePath: getFileInfo(cert.certificate, "Other Cert"),
+                    certificateFilePath: getFileInfo(cert.certificate, "Other Cert"),
                 })),
 
                 internships: experience.internships.map(int => ({
@@ -799,17 +799,17 @@ const EmployeeOnboardingForm = () => {
                     relievingDate: int.relieving,
                     internshipId: int.id,
                     duration: int.duration,
-                    offerLetterPath: getFileInfo(int.offerLetter, "Int Offer"),
-                    experienceCertificatePath: getFileInfo(int.relievingLetter, "Int Exp"),
+                    offerLetterFilePath: getFileInfo(int.offerLetter, "Int Offer"),
+                    experienceCertificateFilePath: getFileInfo(int.relievingLetter, "Int Exp"),
                 })),
                 workExperiences: experience.workHistory.map(work => ({
                     id: work.id || null,
                     companyName: work.company,
                     yearsOfExperience: work.years,
-                    offerLetterPath: getFileInfo(work.offerLetter, "Work Offer"),
-                    relievingLetterPath: getFileInfo(work.relievingLetter, "Work Relieving"),
-                    payslipsPath: getFileInfo(work.payslips, "Work Payslips"),
-                    experienceCertificatePath: getFileInfo(work.experienceCert, "Work Exp"),
+                    offerLetterFilePath: getFileInfo(work.offerLetter, "Work Offer"),
+                    relievingLetterFilePath: getFileInfo(work.relievingLetter, "Work Relieving"),
+                    payslipsFilePath: getFileInfo(work.payslips, "Work Payslips"),
+                    experienceCertificateFilePath: getFileInfo(work.experienceCert, "Work Exp"),
                 })),
 
                 bankDetails: {
