@@ -799,17 +799,17 @@ const EmployeeOnboardingForm = () => {
                     relievingDate: int.relieving,
                     internshipId: int.id,
                     duration: int.duration,
-                    offerLetterFilePath: getFileInfo(int.offerLetter, "Int Offer"),
-                    experienceCertificateFilePath: getFileInfo(int.relievingLetter, "Int Exp"),
+                    offerLetterPath: getFileInfo(int.offerLetter, "Int Offer"),
+                    experienceCertificatePath: getFileInfo(int.relievingLetter, "Int Exp"),
                 })),
                 workExperiences: experience.workHistory.map(work => ({
                     id: work.id || null,
                     companyName: work.company,
                     yearsOfExperience: work.years,
-                    offerLetterFilePath: getFileInfo(work.offerLetter, "Work Offer"),
-                    relievingLetterFilePath: getFileInfo(work.relievingLetter, "Work Relieving"),
-                    payslipsFilePath: getFileInfo(work.payslips, "Work Payslips"),
-                    experienceCertificateFilePath: getFileInfo(work.experienceCert, "Work Exp"),
+                    offerLetterPath: getFileInfo(work.offerLetter, "Work Offer"),
+                    relievingLetterPath: getFileInfo(work.relievingLetter, "Work Relieving"),
+                    payslipsPath: getFileInfo(work.payslips, "Work Payslips"),
+                    experienceCertificatePath: getFileInfo(work.experienceCert, "Work Exp"),
                 })),
 
                 bankDetails: {
